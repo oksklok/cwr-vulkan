@@ -4,6 +4,7 @@
 
 // Graphics backends
 #cmakedefine01 CWR_HAS_OPENGL
+#cmakedefine01 CWR_HAS_VULKAN
 
 // Audio backends
 #cmakedefine01 CWR_HAS_OPENAL

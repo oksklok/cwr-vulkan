@@ -33,7 +33,7 @@ struct Vertex2DPixel;
 struct Rect2DPixel;
 class FaceArray;
 
-// Contract every graphics backend (GL33, Dummy) implements.
+// Contract every graphics backend (GL33, Vulkan, Dummy) implements.
 class IGraphicsEngine
 {
   public:

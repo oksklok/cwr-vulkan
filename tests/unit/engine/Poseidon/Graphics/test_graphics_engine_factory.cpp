@@ -1,6 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
+#include <BuildConfig.h>
 
 #include <Poseidon/Graphics/GraphicsEngineFactory.hpp>
+#include <Poseidon/Foundation/Platform/AppConfig.hpp>
 
 #include <string>
 #include <vector>
@@ -70,6 +72,50 @@ Engine* CreateDummyForTest(const GraphicsEngineParams&)
     return reinterpret_cast<Engine*>(&g_dummySentinel);
 }
 } // namespace
+
+TEST_CASE("Vulkan backend registration preserves GL33 and Dummy preference", "[graphics][factory][unit]")
+{
+    ResetTestState();
+    CHECK(AppConfig::Instance().GetRenderBackend() == "gl33");
+    CHECK(static_cast<int>(GraphicsBackend::Auto) == 34); // Preserve the pre-existing enum value.
+    Poseidon::RegisterDummyGraphicsBackend();
+    // This harness stubs RegisterGL33GraphicsBackend. Model its existing priority
+    // with a sentinel callback; register the actual Dummy and Vulkan descriptors.
+    REQUIRE(GraphicsEngineFactory::Register({"gl33", "OpenGL 3.3 Core (SDL3)", 100, &CreatePrimary, nullptr}));
+#if CWR_HAS_VULKAN
+    Poseidon::RegisterVKGraphicsBackend();
+    Poseidon::RegisterVKGraphicsBackend(); // Real registration is idempotent; no instance/device query.
+#endif
+    const auto backends = GraphicsEngineFactory::EnumerateRegistered();
+    REQUIRE(backends.size() == (CWR_HAS_VULKAN ? 3 : 2));
+    CHECK(std::string(backends[0].codeName) == "gl33");
+    CHECK(std::string(backends[1].codeName) == "dummy");
+#if CWR_HAS_VULKAN
+    CHECK(std::string(backends[2].codeName) == "vk");
+    CHECK(std::string(backends[2].displayName).find("Vulkan") != std::string::npos);
+    CHECK(backends[2].priority < backends[1].priority);
+    CHECK(GraphicsEngineFactory::IsBackendAvailable(GraphicsBackend::Vulkan));
+#else
+    CHECK_FALSE(GraphicsEngineFactory::IsBackendAvailable(GraphicsBackend::Vulkan));
+#endif
+    GraphicsEngineFactory::ResetForTesting();
+}
+
+TEST_CASE("GraphicsEngineFactory resolves the Vulkan enum and explicit code without creating a device",
+          "[graphics][factory][unit]")
+{
+    ResetTestState();
+    REQUIRE(GraphicsEngineFactory::Register({"vk", "Vulkan sentinel", -100, &CreateSecondary, &SecondaryAvailable}));
+    REQUIRE(GraphicsEngineFactory::Register({"gl33", "GL33 sentinel", 100, &CreatePrimary, &PrimaryAvailable}));
+    CHECK(GraphicsEngineFactory::Create(GraphicsBackend::Vulkan) == reinterpret_cast<Engine*>(&g_secondarySentinel));
+    CHECK(GraphicsEngineFactory::Create("VK") == reinterpret_cast<Engine*>(&g_secondarySentinel));
+    CHECK(GraphicsEngineFactory::CreateAuto(GraphicsEngineParams{}) == reinterpret_cast<Engine*>(&g_primarySentinel));
+    CHECK(std::string(GraphicsEngineFactory::GetBackendName(GraphicsBackend::Vulkan)) == "Vulkan sentinel");
+    g_secondaryAvailable = false;
+    CHECK_FALSE(GraphicsEngineFactory::IsBackendAvailable(GraphicsBackend::Vulkan));
+    CHECK(GraphicsEngineFactory::Create("vk") == nullptr);
+    GraphicsEngineFactory::ResetForTesting();
+}
 
 TEST_CASE("GraphicsEngineFactory rejects incomplete and duplicate descriptors", "[graphics][factory][unit]")
 {

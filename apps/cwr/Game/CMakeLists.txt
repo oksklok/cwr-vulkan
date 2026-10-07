@@ -50,6 +50,7 @@ if(WIN32)
         GameBase
         Poseidon
         PoseidonGL33
+        ${CWR_VULKAN_BACKEND_TARGET}
         PoseidonOpenAL
         # Windows system libraries
         winmm.lib
@@ -61,6 +62,7 @@ elseif(APPLE)
     target_link_libraries(PoseidonGame PRIVATE
         GameBase
         PoseidonGL33
+        ${CWR_VULKAN_BACKEND_TARGET}
         Poseidon
         PoseidonOpenAL
         pthread
@@ -71,6 +73,7 @@ else()
         -Wl,--start-group
         GameBase
         PoseidonGL33
+        ${CWR_VULKAN_BACKEND_TARGET}
         Poseidon
         PoseidonOpenAL
         -Wl,--end-group

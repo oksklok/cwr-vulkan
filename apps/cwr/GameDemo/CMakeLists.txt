@@ -41,17 +41,17 @@ target_include_directories(PoseidonGameDemo PRIVATE
 
 if(WIN32)
     target_link_libraries(PoseidonGameDemo PRIVATE
-        GameBase Poseidon PoseidonGL33 PoseidonOpenAL
+        GameBase Poseidon PoseidonGL33 ${CWR_VULKAN_BACKEND_TARGET} PoseidonOpenAL
         winmm.lib version.lib ws2_32.lib legacy_stdio_definitions.lib
     )
 elseif(APPLE)
     target_link_libraries(PoseidonGameDemo PRIVATE
-        GameBase PoseidonGL33 Poseidon PoseidonOpenAL
+        GameBase PoseidonGL33 ${CWR_VULKAN_BACKEND_TARGET} Poseidon PoseidonOpenAL
         pthread dl
     )
 else()
     target_link_libraries(PoseidonGameDemo PRIVATE
-        -Wl,--start-group GameBase PoseidonGL33 Poseidon PoseidonOpenAL -Wl,--end-group
+        -Wl,--start-group GameBase PoseidonGL33 ${CWR_VULKAN_BACKEND_TARGET} Poseidon PoseidonOpenAL -Wl,--end-group
         pthread dl
     )
 endif()

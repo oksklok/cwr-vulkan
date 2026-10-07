@@ -18,7 +18,7 @@ extern void SDLInput_BufferUICharEvent(const char* text);
 #include <Poseidon/Foundation/Framework/AppFrame.hpp>
 extern void SetSkipKeys(bool skip);
 
-// SDL event-pump helper used by EngineGL33.  Does NOT own the SDL_Window —
+// SDL event-pump helper shared by the SDL graphics backends. Does NOT own the SDL_Window —
 // the renderer manages its lifecycle.  Handles SDL event polling, focus
 // tracking, and input forwarding.
 class SDLEventWindow
@@ -113,7 +113,7 @@ class SDLEventWindow
                 _open = false;
                 GApp->m_closeRequest = true;
             }
-            else if (event.type == SDL_EVENT_WINDOW_RESIZED)
+            else if (event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
             {
                 if (_sdlWindow)
                     SDL_GetWindowSizeInPixels(_sdlWindow, &_width, &_height);

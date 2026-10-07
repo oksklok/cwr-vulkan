@@ -5,7 +5,7 @@ file(GLOB_RECURSE POSEIDON_GL33_SOURCES CONFIGURE_DEPENDS
 set(POSEIDON_GL33_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/EngineGL33.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/GLVertexAttribLayouts.hpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/SDLEventWindow.hpp
+    ${CMAKE_SOURCE_DIR}/engine/Poseidon/Graphics/Shared/SDLEventWindow.hpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TextureGL33.hpp
 )
 

@@ -1,4 +1,5 @@
 #include <Poseidon/Foundation/Platform/VersionNo.h>
+#include <BuildConfig.h>
 #include "GameApplication.hpp"
 #include <Poseidon/Foundation/Platform/InitBridge.hpp>
 #include <Poseidon/Core/Game/GameLoop.hpp>
@@ -1493,6 +1494,9 @@ void GameApplication::RegisterGraphicsBackends()
 {
     RegisterDummyGraphicsBackend();
     RegisterGL33GraphicsBackend();
+#if CWR_HAS_VULKAN
+    RegisterVKGraphicsBackend();
+#endif
 }
 
 bool GameApplication::InitializeInput()
