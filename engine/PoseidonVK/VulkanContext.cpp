@@ -71,6 +71,11 @@ void VulkanContext::CreateInstance(const char* const* extensions, uint32_t count
     for (const char* extension : enabled)
         if (!HasExtension(available, extension))
             throw std::runtime_error(std::string("Vulkan: missing SDL surface extension ") + extension);
+    // portability_subset needs this instance dependency with our Vulkan 1.0 baseline.
+    if (HasExtension(available, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME) &&
+        std::none_of(enabled.begin(), enabled.end(), [](const char* name)
+                     { return std::strcmp(name, VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME) == 0; }))
+        enabled.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
     if (HasExtension(available, VK_EXT_DEBUG_UTILS_EXTENSION_NAME))
     {
         enabled.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);

@@ -1,11 +1,16 @@
 // Deliberately standalone: no SDL initialization, instance, surface or physical device.
 #include <PoseidonVK/VulkanContext.hpp>
 #include <cstdio>
+#include <cstring>
 #include <stdexcept>
 
 namespace
 {
 int checks = 0;
+std::vector<const char*> availableInstanceExtensions;
+std::vector<std::string> requestedInstanceExtensions;
+uint32_t requestedApiVersion = 0;
+VkInstanceCreateFlags requestedInstanceFlags = 0;
 void Check(bool condition, const char* message)
 {
     ++checks;
@@ -28,6 +33,40 @@ void CheckThrows(Action action, const char* message)
     throw std::runtime_error(message);
 }
 } // namespace
+
+// Replace only instance entry points: exercise real extension selection without
+// creating a driver instance or requiring any particular machine's extensions.
+VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(const char*, uint32_t* count,
+                                                                      VkExtensionProperties* properties)
+{
+    if (!properties)
+    {
+        *count = static_cast<uint32_t>(availableInstanceExtensions.size());
+        return VK_SUCCESS;
+    }
+    const auto copied = std::min(*count, static_cast<uint32_t>(availableInstanceExtensions.size()));
+    for (uint32_t i = 0; i < copied; ++i)
+    {
+        properties[i] = {};
+        std::memcpy(properties[i].extensionName, availableInstanceExtensions[i],
+                    std::strlen(availableInstanceExtensions[i]) + 1);
+    }
+    *count = copied;
+    return copied == availableInstanceExtensions.size() ? VK_SUCCESS : VK_INCOMPLETE;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo* info, const VkAllocationCallbacks*,
+                                                VkInstance* instance)
+{
+    requestedInstanceExtensions.assign(info->ppEnabledExtensionNames,
+                                       info->ppEnabledExtensionNames + info->enabledExtensionCount);
+    requestedApiVersion = info->pApplicationInfo->apiVersion;
+    requestedInstanceFlags = info->flags;
+    *instance = reinterpret_cast<VkInstance>(uintptr_t{1});
+    return VK_SUCCESS;
+}
+
+VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(VkInstance, const VkAllocationCallbacks*) {}
 
 int main()
 {
@@ -104,6 +143,39 @@ int main()
         Check(NeedsRecreation(VK_SUBOPTIMAL_KHR), "suboptimal requires recreation");
         Check(!NeedsRecreation(VK_ERROR_DEVICE_LOST), "device loss is terminal, not a resize");
         Check(!NeedsRecreation(VK_SUCCESS), "successful present must not force recreation");
+
+        const char* surfaceExtensions[] = {VK_KHR_SURFACE_EXTENSION_NAME};
+        VulkanContext instanceContext;
+        availableInstanceExtensions = {VK_KHR_SURFACE_EXTENSION_NAME};
+        instanceContext.CreateInstance(surfaceExtensions, 1);
+        Check(requestedInstanceExtensions == std::vector<std::string>{VK_KHR_SURFACE_EXTENSION_NAME},
+              "native Vulkan 1.0 must work without optional properties2 support");
+        Check(requestedApiVersion == VK_API_VERSION_1_0 && requestedInstanceFlags == 0,
+              "native instance must retain the Vulkan 1.0 baseline and flags");
+        instanceContext.Shutdown();
+
+#ifdef VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
+        availableInstanceExtensions = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
+                                       VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME};
+        instanceContext.CreateInstance(surfaceExtensions, 1);
+        Check(std::count(requestedInstanceExtensions.begin(), requestedInstanceExtensions.end(),
+                         VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME) == 1,
+              "Vulkan 1.0 portability requires properties2 enabled at instance creation");
+        Check(requestedApiVersion == VK_API_VERSION_1_0 &&
+                  (requestedInstanceFlags & VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR),
+              "portability enumeration must retain its flag without raising the API baseline");
+        instanceContext.Shutdown();
+#endif
+
+        availableInstanceExtensions = {VK_KHR_SURFACE_EXTENSION_NAME,
+                                       VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME};
+        const char* suppliedExtensions[] = {VK_KHR_SURFACE_EXTENSION_NAME,
+                                            VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME};
+        instanceContext.CreateInstance(suppliedExtensions, 2);
+        Check(std::count(requestedInstanceExtensions.begin(), requestedInstanceExtensions.end(),
+                         VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME) == 1,
+              "properties2 supplied by the caller must not be added twice");
+        instanceContext.Shutdown();
 
         VulkanContext context;
         Check(!context.Instance() && !context.FrameOpen(), "context must start empty");
