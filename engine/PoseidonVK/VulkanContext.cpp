@@ -154,7 +154,8 @@ void VulkanContext::CreateInstance(const char* const* extensions, uint32_t count
             }
         }
         else
-            std::fprintf(stderr, "Vulkan: requested Khronos validation layer unavailable; validation NOT active\n");
+            throw std::runtime_error("Vulkan: --vk-validation requires VK_LAYER_KHRONOS_validation; "
+                                     "install/enable the Khronos validation layer or omit --vk-validation");
     }
     if (_debugNamesEnabled)
     {

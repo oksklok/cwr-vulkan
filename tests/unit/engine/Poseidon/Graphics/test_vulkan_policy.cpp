@@ -11,6 +11,9 @@ namespace
 int checks = 0;
 std::vector<const char*> availableInstanceExtensions;
 std::vector<std::string> requestedInstanceExtensions;
+std::vector<std::string> requestedInstanceLayers;
+bool validationLayerAvailable = false;
+unsigned instanceCreationCalls = 0, layerEnumerationCalls = 0;
 uint32_t requestedApiVersion = 0;
 VkInstanceCreateFlags requestedInstanceFlags = 0;
 PFN_vkDebugUtilsMessengerCallbackEXT instanceCallback = nullptr;
@@ -57,6 +60,19 @@ void CheckThrows(Action action, const char* message)
 
 // Replace only instance entry points: exercise real extension selection without
 // creating a driver instance or requiring any particular machine's extensions.
+VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceLayerProperties(uint32_t* count, VkLayerProperties* properties)
+{
+    ++layerEnumerationCalls;
+    if (properties && validationLayerAvailable)
+    {
+        if (!*count)
+            return VK_INCOMPLETE;
+        properties[0] = {};
+        std::memcpy(properties[0].layerName, "VK_LAYER_KHRONOS_validation", sizeof("VK_LAYER_KHRONOS_validation"));
+    }
+    *count = validationLayerAvailable ? 1 : 0;
+    return VK_SUCCESS;
+}
 VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(const char*, uint32_t* count,
                                                                       VkExtensionProperties* properties)
 {
@@ -79,6 +95,10 @@ VKAPI_ATTR VkResult VKAPI_CALL vkEnumerateInstanceExtensionProperties(const char
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo* info, const VkAllocationCallbacks*,
                                                 VkInstance* instance)
 {
+    ++instanceCreationCalls;
+    requestedInstanceLayers.clear();
+    for (uint32_t i = 0; i < info->enabledLayerCount; ++i)
+        requestedInstanceLayers.emplace_back(info->ppEnabledLayerNames[i]);
     requestedInstanceExtensions.assign(info->ppEnabledExtensionNames,
                                        info->ppEnabledExtensionNames + info->enabledExtensionCount);
     requestedApiVersion = info->pApplicationInfo->apiVersion;
@@ -205,11 +225,38 @@ int main()
         VulkanContext instanceContext;
         availableInstanceExtensions = {VK_KHR_SURFACE_EXTENSION_NAME};
         instanceContext.CreateInstance(surfaceExtensions, 1);
+        Check(requestedInstanceLayers.empty() && !layerEnumerationCalls,
+              "without a validation request, a missing layer must not affect instance creation");
         Check(requestedInstanceExtensions == std::vector<std::string>{VK_KHR_SURFACE_EXTENSION_NAME},
               "native Vulkan 1.0 must work without optional properties2 support");
         Check(requestedApiVersion == VK_API_VERSION_1_0 && requestedInstanceFlags == 0,
               "native instance must retain the Vulkan 1.0 baseline and flags");
         instanceContext.Shutdown();
+
+        const unsigned createdBeforeRequest = instanceCreationCalls;
+        bool rejectedMissingLayer = false;
+        try
+        {
+            instanceContext.CreateInstance(surfaceExtensions, 1, true);
+        }
+        catch (const std::runtime_error& error)
+        {
+            rejectedMissingLayer = true;
+            const std::string message = error.what();
+            Check(message.find("--vk-validation") != std::string::npos &&
+                      message.find("VK_LAYER_KHRONOS_validation") != std::string::npos,
+                  "missing requested validation layer must identify the flag and dependency");
+        }
+        Check(rejectedMissingLayer, "explicit validation must fail when the Khronos layer is unavailable");
+        Check(!instanceContext.Instance() && instanceCreationCalls == createdBeforeRequest,
+              "missing requested validation layer must fail before creating an instance");
+        validationLayerAvailable = true;
+        VulkanContext validatedContext;
+        validatedContext.CreateInstance(surfaceExtensions, 1, true);
+        Check(requestedInstanceLayers == std::vector<std::string>{"VK_LAYER_KHRONOS_validation"},
+              "available requested Khronos layer must be enabled, not just detected");
+        validatedContext.Shutdown();
+        validationLayerAvailable = false;
 
 #ifdef VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
         availableInstanceExtensions = {VK_KHR_SURFACE_EXTENSION_NAME, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,

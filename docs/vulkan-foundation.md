@@ -56,9 +56,10 @@ redirects to keep test writes outside the retail content directory.
   resource and rendering entry points. It does not inherit Dummy's no-op draws.
 
 Instance creation uses SDL's required surface extensions, optional debug-utils
-object names and optional portability enumeration. `--vk-validation` explicitly
-requests Khronos validation and synchronization validation when available;
-absence is logged, never reported as a validation pass. Warning/error callbacks
+object names and optional portability enumeration. `--vk-validation` requires the
+Khronos validation layer; its absence fails initialization with an actionable
+error, rather than allowing an unvalidated smoke-test success. Synchronization
+validation is enabled when its layer extension is available. Warning/error callbacks
 include their message IDs. Loader diagnostics are distinguished from validation
 messages. A Vulkan 1.0 device is sufficient; portability subset is enabled when
 advertised, with its properties2 instance dependency retained.
@@ -172,7 +173,7 @@ fake vertex-buffer or geometry-submission implementation was added.
   disabled-layer loader warnings are not validation warnings. No machine overlay
   installation or registry was changed.
 - Vulkan-enabled and GL33-only Game/GameDemo/Tetris, GL33/Dummy and the Poseidon
-  test target build successfully. Driver-free policy CTest passes all **78** checks (original
+  test target build successfully. Driver-free policy CTest passes all **83** checks (original
   42 plus buffer allocation/map/bind failure cleanup, bounds/lifetime and indexed
   layout/draw guards). Factory: 17 cases in each configuration (ON: 94 assertions,
   OFF: 91); window/close regression: 3 cases / 10 assertions in each. No driver is
@@ -198,6 +199,11 @@ smoke verdict includes destruction-time errors. Driver-free regressions cover a
 failed map with non-null output and an injected teardown-only validation error;
 both build configurations and their focused tests pass. The GPU results above
 precede this follow-up; no new live run was performed for these error-path fixes.
+
+Explicit-validation follow-up: a missing requested Khronos layer fails before
+instance creation. Driver-free tests cover the rejection/error message, enabling
+an available requested layer, and unchanged layer-independent operation without
+the flag. CLI help now describes the strict requirement; no new live run was performed.
 
 The smallest next step is one immutable, untextured `Shape` through the existing
 `CreateVertexBuffer` / `DrawSectionTL` section/index-range seams, using these buffer

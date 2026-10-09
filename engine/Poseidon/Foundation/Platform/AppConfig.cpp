@@ -528,7 +528,8 @@ void AppConfig::ParseCommandLine(int argc, char** argv)
                                         "Renderer-only diagnostic: clear or triangle (requires --render vk)")
                        ->check(CLI::IsMember({"clear", "triangle"})), CliHelpVisibility::Dev);
         showOption(initGroup->add_flag("--vk-validation", _vulkanValidation,
-                                      "Enable Khronos Vulkan validation when installed"), CliHelpVisibility::Dev);
+                                      "Require Khronos Vulkan validation (fail if the layer is unavailable)"),
+                   CliHelpVisibility::Dev);
 
         showOption(initGroup->add_flag("--remount-selftest", _remountSelfTest,
                                        "Boot, perform one in-process re-mount, then exit (re-mount smoke test)"),
