@@ -545,6 +545,7 @@ bool VulkanContext::BeginFrame(uint32_t width, uint32_t height)
     auto& frame = _frames[_frame];
     Check(vkWaitForFences(_device, 1, &frame.submitted, VK_TRUE, UINT64_MAX), "wait frame fence");
     frame.meshes.clear();
+    frame.textures.clear();
     // A finite acquire timeout avoids blocking forever if the surface stops progressing.
     const VkResult acquired =
         vkAcquireNextImageKHR(_device, _swapchain, 1000000000ULL, frame.acquired, VK_NULL_HANDLE, &_image);
@@ -665,6 +666,10 @@ unsigned VulkanContext::Shutdown() noexcept
             if (auto mesh = entry.lock())
                 mesh->Destroy();
         _meshes.clear();
+        for (auto& entry : _textures)
+            if (auto texture = entry.lock()) texture->Destroy();
+        _textures.clear();
+        _whiteTexture.reset();
         DestroySwapchain();
         // Immutable geometry can be shared by both frame slots; teardown follows device idle.
         DestroyBuffer(_device, _triangleIndices);
@@ -675,6 +680,8 @@ unsigned VulkanContext::Shutdown() noexcept
         if (_shapeLayout)
             vkDestroyPipelineLayout(_device, _shapeLayout, nullptr);
         _shapeLayout = VK_NULL_HANDLE;
+        if (_textureLayout) vkDestroyDescriptorSetLayout(_device, _textureLayout, nullptr);
+        _textureLayout = VK_NULL_HANDLE;
         for (auto& frame : _frames)
         {
             if (frame.acquired)

@@ -21,6 +21,18 @@ struct MeshBuffers
     ~MeshBuffers();
     void Destroy() noexcept;
 };
+struct TextureImage
+{
+    VkDevice device = VK_NULL_HANDLE;
+    VkImage image = VK_NULL_HANDLE;
+    VkDeviceMemory memory = VK_NULL_HANDLE;
+    VkImageView view = VK_NULL_HANDLE;
+    VkSampler sampler = VK_NULL_HANDLE;
+    VkDescriptorPool pool = VK_NULL_HANDLE;
+    VkDescriptorSet descriptor = VK_NULL_HANDLE;
+    ~TextureImage();
+    void Destroy() noexcept;
+};
 // Backend-private Vulkan ownership. SDL owns the window; this owns its surface.
 // No engine drawing, asset or GL types are involved in device/swapchain lifetime.
 class VulkanContext
@@ -46,8 +58,10 @@ class VulkanContext
     void DrawDiagnosticTriangle(); // Explicit DrawTestPattern seam, never an automatic gameplay draw.
     std::shared_ptr<MeshBuffers> UploadMesh(const void* vertices, size_t vertexBytes, const void* indices,
                                             size_t indexBytes);
+    std::shared_ptr<TextureImage> UploadTexture(uint32_t width, uint32_t height, const void* rgba);
     void DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t firstIndex, uint32_t count, bool index16,
-                  const std::array<float, 16>& mvp, const std::array<float, 4>& color);
+                  const std::array<float, 16>& mvp, const std::array<float, 4>& color,
+                  const std::shared_ptr<TextureImage>& texture = {});
     void EndFrame();
     bool FrameOpen() const { return _frameOpen; }
     VkExtent2D Extent() const { return _extent; }
@@ -61,6 +75,7 @@ class VulkanContext
         VkSemaphore acquired = VK_NULL_HANDLE;
         VkFence submitted = VK_NULL_HANDLE;
         std::vector<std::shared_ptr<MeshBuffers>> meshes;
+        std::vector<std::shared_ptr<TextureImage>> textures;
     };
     static constexpr size_t FramesInFlight = 2;
     VkInstance _instance = VK_NULL_HANDLE;
@@ -73,6 +88,10 @@ class VulkanContext
     VkCommandPool _pool = VK_NULL_HANDLE;
     std::array<Frame, FramesInFlight> _frames{};
     std::vector<std::weak_ptr<MeshBuffers>> _meshes;
+    std::vector<std::weak_ptr<TextureImage>> _textures;
+    std::shared_ptr<TextureImage> _whiteTexture;
+    VkDescriptorSetLayout _textureLayout = VK_NULL_HANDLE;
+    void CreateTextureLayout();
     VkSwapchainKHR _swapchain = VK_NULL_HANDLE;
     VkRenderPass _renderPass = VK_NULL_HANDLE;
     struct DepthAttachment

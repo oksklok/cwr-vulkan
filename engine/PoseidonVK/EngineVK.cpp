@@ -29,7 +29,7 @@ bool ReadMode(const SDL_DisplayMode* mode, int& width, int& height, int& refresh
 }
 } // namespace
 
-EngineVK::EngineVK(const GraphicsEngineParams& params)
+EngineVK::EngineVK(const GraphicsEngineParams& params) : _textures(_vk)
 {
     try
     {

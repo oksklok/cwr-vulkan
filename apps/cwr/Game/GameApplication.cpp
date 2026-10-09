@@ -663,8 +663,8 @@ int GameApplication::RunAfterArgumentParsing()
         try
         {
             std::unique_ptr<VulkanShapeSmoke> shape;
-            if (config.VulkanSmoke() == "shape")
-                shape = std::make_unique<VulkanShapeSmoke>(*engine);
+            if (config.VulkanSmoke() == "shape" || config.VulkanSmoke() == "texture")
+                shape = std::make_unique<VulkanShapeSmoke>(*engine, config.VulkanSmoke() == "texture");
             while (engine->IsOpen() && !m_closeRequest &&
                    (config.AppTimeoutSeconds() <= 0 ||
                     SDL_GetTicks() - started < config.AppTimeoutSeconds() * 1000.0f))

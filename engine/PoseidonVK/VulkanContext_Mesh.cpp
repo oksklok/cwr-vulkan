@@ -60,6 +60,9 @@ void VulkanContext::CreateShapePipeline()
     {
         const VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 80};
         VkPipelineLayoutCreateInfo layout{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
+        CreateTextureLayout();
+        layout.setLayoutCount = 1;
+        layout.pSetLayouts = &_textureLayout;
         layout.pushConstantRangeCount = 1;
         layout.pPushConstantRanges = &push;
         Require(vkCreatePipelineLayout(_device, &layout, nullptr, &_shapeLayout), "create pipeline layout");
@@ -84,12 +87,13 @@ void VulkanContext::CreateShapePipeline()
         // GL33 SVertex-compatible position/normal/UV packing; only position is
         // consumed by this deliberately unlit, untextured shader.
         const VkVertexInputBindingDescription binding{0, 8 * sizeof(float), VK_VERTEX_INPUT_RATE_VERTEX};
-        const VkVertexInputAttributeDescription attribute{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0};
+        const VkVertexInputAttributeDescription attributes[] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
+                                                                {1, 0, VK_FORMAT_R32G32_SFLOAT, 6 * sizeof(float)}};
         VkPipelineVertexInputStateCreateInfo input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         input.vertexBindingDescriptionCount = 1;
         input.pVertexBindingDescriptions = &binding;
-        input.vertexAttributeDescriptionCount = 1;
-        input.pVertexAttributeDescriptions = &attribute;
+        input.vertexAttributeDescriptionCount = 2;
+        input.pVertexAttributeDescriptions = attributes;
         VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
         assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         VkPipelineViewportStateCreateInfo viewport{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
@@ -145,7 +149,8 @@ void VulkanContext::CreateShapePipeline()
 }
 
 void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t firstIndex, uint32_t count,
-                             bool index16, const std::array<float, 16>& mvp, const std::array<float, 4>& color)
+                             bool index16, const std::array<float, 16>& mvp, const std::array<float, 4>& color,
+                             const std::shared_ptr<TextureImage>& texture)
 {
     if (!_frameOpen || !mesh || mesh->device != _device || !mesh->vertices.buffer || !mesh->indices.buffer)
         throw std::logic_error("Vulkan Shape: indexed draw needs an open frame and live buffers from this device");
@@ -154,13 +159,25 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
         throw std::out_of_range("Vulkan Shape: indexed draw exceeds geometry or is not a triangle list");
     if (!count)
         return;
+    if (!texture && !_whiteTexture)
+    {
+        const uint32_t white = 0xffffffff;
+        _whiteTexture = UploadTexture(1, 1, &white);
+    }
+    const auto& sampled = texture ? texture : _whiteTexture;
+    if (sampled->device != _device)
+        throw std::logic_error("Vulkan Shape: texture is not live on this device");
     if (!_shapePipeline)
         CreateShapePipeline();
     auto& frame = _frames[_frame];
     // Retain each mesh once per frame until that frame's submission fence completes.
     if (std::find(frame.meshes.begin(), frame.meshes.end(), mesh) == frame.meshes.end())
         frame.meshes.push_back(mesh);
+    if (std::find(frame.textures.begin(), frame.textures.end(), sampled) == frame.textures.end())
+        frame.textures.push_back(sampled);
     vkCmdBindPipeline(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapePipeline);
+    vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 0, 1, &sampled->descriptor, 0,
+                            nullptr);
     const VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(frame.command, 0, 1, &mesh->vertices.buffer, &offset);
     vkCmdBindIndexBuffer(frame.command, mesh->indices.buffer, 0, index16 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);

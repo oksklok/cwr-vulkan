@@ -17,7 +17,7 @@ foreach(kind triangle shape)
 endforeach()
 add_custom_target(PoseidonVKShaders DEPENDS ${VK_SHADER_HEADERS})
 
-add_library(PoseidonVK STATIC VulkanContext.cpp VulkanContext_Triangle.cpp VulkanContext_Mesh.cpp BufferVK.cpp VertexBufferVK.cpp
+add_library(PoseidonVK STATIC VulkanContext.cpp VulkanContext_Triangle.cpp VulkanContext_Mesh.cpp VulkanContext_Texture.cpp TextureVK.cpp BufferVK.cpp VertexBufferVK.cpp
     EngineVK.cpp EngineVK_Mesh.cpp EngineVK_Unsupported.cpp GraphicsBackendVK.cpp)
 add_dependencies(PoseidonVK PoseidonVKShaders)
 target_include_directories(PoseidonVK PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -33,7 +33,7 @@ endif()
 
 # Driver-free policy test: also builds directly with MSVC and SDK headers when
 # the full engine dependency toolchain is unavailable.
-add_executable(PoseidonVKPolicyTests VulkanContext.cpp VulkanContext_Triangle.cpp VulkanContext_Mesh.cpp BufferVK.cpp
+add_executable(PoseidonVKPolicyTests VulkanContext.cpp VulkanContext_Triangle.cpp VulkanContext_Mesh.cpp VulkanContext_Texture.cpp BufferVK.cpp
     ${CMAKE_SOURCE_DIR}/tests/unit/engine/Poseidon/Graphics/test_vulkan_buffers.cpp
     ${CMAKE_SOURCE_DIR}/tests/unit/engine/Poseidon/Graphics/test_vulkan_policy.cpp)
 target_include_directories(PoseidonVKPolicyTests PRIVATE ${CMAKE_SOURCE_DIR}/engine)

@@ -369,3 +369,18 @@ RTX 4060 Ti live captures (`build/shape-live/native-close`) visibly confirmed
 rotation, section colors and depth overlap across resize/minimize/restore.
 Normal window close exited 0, 1134 submissions, zero validation errors/warnings
 through teardown. Focused tests: 12 cases/83 assertions; policy guards: 85.
+
+## Stock texture uploads (2026-10-10)
+
+`--vulkan-smoke texture` mounts stock `dta/data.pbo` with the existing bank API,
+loads `data\domek1_front_okna.pac` and `data\domek1_side.pac` through
+`QIFStreamB` and `DecodePAABuffer`, and samples cached RGBA images on native
+Shapes. No asset extraction or alternate decoder. Uploads use a staging buffer,
+one-time command and fence, then shader-read layout; images/descriptors are held
+by referencing frames. Only the original top mip is supported for now.
+Two visibly distinct textures, UV orientation and section switching were inspected
+in `build/shape-live/texture-close`, including resize/minimize/restore. Exit 0,
+1081 submissions, zero validation errors/warnings through shutdown. Decoder and
+Shape tests: 26 cases/4219 assertions; policy guards: 85. Alpha textures currently
+fail explicitly; stock `domek2_side.paa` decoded successfully as cutout but is not
+yet a supported draw. This is the next section-pipeline milestone.

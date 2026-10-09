@@ -525,8 +525,8 @@ void AppConfig::ParseCommandLine(int argc, char** argv)
         showOption(initGroup->add_flag("--check", _checkInit, "Initialize subsystems and exit (for smoke tests)"),
                    CliHelpVisibility::Dev);
         showOption(initGroup->add_option("--vulkan-smoke", _vulkanSmoke,
-                                        "Renderer-only diagnostic: clear, triangle or engine Shape (requires --render vk)")
-                       ->check(CLI::IsMember({"clear", "triangle", "shape"})), CliHelpVisibility::Dev);
+                                        "Renderer-only diagnostic: clear, triangle, shape or texture (requires --render vk)")
+                       ->check(CLI::IsMember({"clear", "triangle", "shape", "texture"})), CliHelpVisibility::Dev);
         showOption(initGroup->add_flag("--vk-validation", _vulkanValidation,
                                       "Require Khronos Vulkan validation (fail if the layer is unavailable)"),
                    CliHelpVisibility::Dev);

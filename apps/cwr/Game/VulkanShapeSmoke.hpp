@@ -6,6 +6,8 @@
 #include <Poseidon/World/Scene/Scene.hpp>
 #include <Poseidon/World/Scene/Camera/Camera.hpp>
 #include <Poseidon/Graphics/Core/TLVertex.hpp>
+#include <Poseidon/Graphics/Textures/TextureBank.hpp>
+#include <Poseidon/IO/Streams/QBStream.hpp>
 
 namespace Poseidon
 {
@@ -14,13 +16,19 @@ namespace Poseidon
 class VulkanShapeSmoke
 {
   public:
-    explicit VulkanShapeSmoke(Engine& engine) : _engine(engine), _previousScene(GScene)
+    explicit VulkanShapeSmoke(Engine& engine, bool textured = false)
+        : _engine(engine), _previousScene(GScene), _textured(textured)
     {
         const Vector3 points[] = {{-0.9f, -0.65f, -0.55f}, {0.9f, -0.65f, -0.55f}, {0.9f, 0.65f, -0.55f},
                                   {-0.9f, 0.65f, -0.55f},  {-0.9f, -0.65f, 0.55f}, {0.9f, -0.65f, 0.55f},
                                   {0.9f, 0.65f, 0.55f},    {-0.9f, 0.65f, 0.55f}};
-        for (const auto& point : points)
-            _shape.AddVertexFast(point, VUp, 0, 0, 0);
+        if (textured)
+        {
+            GUseFileBanks = true;
+            GFileBanks.Load("dta\\", "dta\\", "data", true);
+            _textures[0] = _engine.TextBank()->Load("data\\domek1_front_okna.pac");
+            _textures[1] = _engine.TextBank()->Load("data\\domek1_side.pac");
+        }
         const int faces[][4] = {{0, 1, 2, 3}, {4, 7, 6, 5}, {0, 3, 7, 4}, {1, 5, 6, 2}, {3, 2, 6, 7}, {0, 4, 5, 1}};
         ShapeSection sections[6];
         for (int i = 0; i < 6; ++i)
@@ -28,11 +36,20 @@ class VulkanShapeSmoke
             Poly face;
             face.Init();
             face.SetN(4);
+            const float uv[][2] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}};
             for (int v = 0; v < 4; ++v)
-                face.Set(v, faces[i][v]);
+            {
+                face.Set(v, i * 4 + v);
+                _shape.AddVertexFast(points[faces[i][v]], VUp, 0, uv[v][0], uv[v][1]);
+            }
             sections[i].properties.Init();
             sections[i].material = 0;
             sections[i].material = i < 2 ? 0 : i - 1;
+            if (textured)
+            {
+                sections[i].material = 0;
+                sections[i].properties.SetTexture(_textures[(i / 2) % 2]);
+            }
             sections[i].beg = _shape.EndFaces();
             _shape.AddFace(face);
             sections[i].end = _shape.EndFaces();
@@ -45,9 +62,8 @@ class VulkanShapeSmoke
         _camera.SetOrient(Vector3(0.15f, 0.08f, 1), VUp);
         _scene = std::make_unique<Scene>();
         GScene = _scene.get();
-        LOG_INFO(
-            Graphics,
-            "Shape smoke: 8 engine vertices, 6 quad sections, 36 fan indices; two model transforms, non-origin camera");
+        LOG_INFO(Graphics, "Shape smoke: 24 engine vertices, 6 quad sections, 36 fan indices; two native Shape draws, "
+                           "non-origin camera");
     }
 
     ~VulkanShapeSmoke()
@@ -90,6 +106,7 @@ class VulkanShapeSmoke
         class StaticMaterials final : public IAnimator
         {
           public:
+            bool textured = false;
             void DoTransform(TLVertexTable&, const Shape&, const Matrix4&, int, int) const override
             {
                 throw std::logic_error("Shape smoke unexpectedly used software transformation");
@@ -105,10 +122,11 @@ class VulkanShapeSmoke
                 const Color colors[] = {Color(0.12f, 0.75f, 0.9f, 1), Color(0.22f, 0.35f, 0.9f, 1),
                                         Color(1, 0.35f, 0.12f, 1), Color(1, 0.8f, 0.18f, 1),
                                         Color(0.2f, 0.8f, 0.35f, 1)};
-                CreateMaterialNormal(mat, colors[index]);
+                CreateMaterialNormal(mat, textured ? Color(1, 1, 1, 1) : colors[index]);
             }
         } materials;
-        _scene->SetConstantColor(back ? Color(0.7f, 0.7f, 0.7f, 1) : Color(1, 1, 1, 1));
+        materials.textured = _textured;
+        _scene->SetConstantColor(!_textured && back ? Color(0.7f, 0.7f, 0.7f, 1) : Color(1, 1, 1, 1));
         _shape.Draw(&materials, _lights, 0, IsColored, model, model.InverseScaled());
     }
 
@@ -119,5 +137,7 @@ class VulkanShapeSmoke
     Scene* _previousScene;
     std::unique_ptr<Scene> _scene;
     bool _releasedDuringFrame = false;
+    bool _textured = false;
+    Ref<Texture> _textures[2];
 };
 } // namespace Poseidon

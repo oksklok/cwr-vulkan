@@ -20,8 +20,18 @@ void EngineVK::SetMaterial(const TLMaterial& mat, const LightList& lights, const
 
 void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& spec)
 {
-    if (!_activeShape || mip._texture || !vk::SupportedShapeSpec(spec))
-        Unsupported("TL section preparation outside untextured opaque geometry");
+    if (!_activeShape || !vk::SupportedShapeSpec(spec))
+        Unsupported("TL section preparation outside opaque geometry");
+    _sectionTexture.reset();
+    if (mip._texture)
+    {
+        auto* texture = dynamic_cast<TextureVK*>(mip._texture);
+        if (!texture)
+            throw std::logic_error("Vulkan section received a foreign texture");
+        if (texture->GetAlphaClass() != AlphaStats::Opaque)
+            Unsupported("alpha textured sections");
+        _sectionTexture = texture->Image(_vk);
+    }
 }
 
 void EngineVK::PrepareMeshTL(const LightList& lights, const Matrix4& modelToWorld, const render::LegacySpec& spec)
@@ -75,14 +85,14 @@ void EngineVK::DrawSectionTL(const Shape& shape, int begin, int end)
     for (int i = begin; i < end; ++i)
     {
         const auto& section = shape.GetSection(i);
-        if (section.properties.GetTexture() || section.surfMat ||
-            !vk::SupportedShapeSpec(render::SplitLegacy(section.properties.Special())))
+        if (section.surfMat || !vk::SupportedShapeSpec(render::SplitLegacy(section.properties.Special())))
             Unsupported("textured/material Shape sections");
     }
     auto color = _shapeColor;
     for (int i = 0; i < 4; ++i)
         color[i] *= _materialColor[i];
-    _vk.DrawMesh(buffer->Buffers(), range.begin, range.end - range.begin, sizeof(VertexIndex) == 2, _shapeMVP, color);
+    _vk.DrawMesh(buffer->Buffers(), range.begin, range.end - range.begin, sizeof(VertexIndex) == 2, _shapeMVP, color,
+                 _sectionTexture);
 }
 
 void EngineVK::EndMeshTL(const Shape& shape)

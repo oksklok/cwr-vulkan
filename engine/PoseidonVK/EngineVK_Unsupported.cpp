@@ -82,10 +82,8 @@ AbstractTextBank* EngineVK::TextBank()
 {
     return &_textures;
 }
-void EngineVK::TextureDestroyed(Texture*)
-{
-    Unsupported("texture lifetime");
-}
+// Frame-held shared images retire at their fences; no address-based GPU handle cache exists.
+void EngineVK::TextureDestroyed(Texture*) {}
 void EngineVK::SetGamma(float gamma)
 {
     if (gamma != 1.0f)
