@@ -39,9 +39,12 @@ class VulkanContext
     int SwapInterval() const { return _swapInterval; }
     bool BeginFrame(uint32_t width, uint32_t height);
     void Clear(float r, float g, float b, float a);
+    void ClearDepth();
     void DrawDiagnosticTriangle(); // Explicit DrawTestPattern seam, never an automatic gameplay draw.
     std::shared_ptr<MeshBuffers> UploadMesh(const void* vertices, size_t vertexBytes, const void* indices,
                                             size_t indexBytes);
+    void DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t firstIndex, uint32_t count, bool index16,
+                  const std::array<float, 16>& mvp, const std::array<float, 4>& color);
     void EndFrame();
     bool FrameOpen() const { return _frameOpen; }
     VkExtent2D Extent() const { return _extent; }
@@ -69,6 +72,19 @@ class VulkanContext
     std::vector<std::weak_ptr<MeshBuffers>> _meshes;
     VkSwapchainKHR _swapchain = VK_NULL_HANDLE;
     VkRenderPass _renderPass = VK_NULL_HANDLE;
+    struct DepthAttachment
+    {
+        VkImage image = VK_NULL_HANDLE;
+        VkDeviceMemory memory = VK_NULL_HANDLE;
+        VkImageView view = VK_NULL_HANDLE;
+    };
+    std::vector<DepthAttachment> _depth;
+    VkFormat _depthFormat = VK_FORMAT_UNDEFINED;
+    VkPipelineLayout _shapeLayout = VK_NULL_HANDLE;
+    VkPipeline _shapePipeline = VK_NULL_HANDLE;
+    bool _loggedShape = false;
+    void CreateShapePipeline();
+    void CreateDepthAttachment(DepthAttachment& depth);
     std::vector<VkImage> _images;
     std::vector<VkImageView> _views;
     std::vector<VkFramebuffer> _framebuffers;

@@ -41,11 +41,11 @@ void VulkanContext::CreateTrianglePipeline()
     try
     {
         VkShaderModuleCreateInfo shader{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-        shader.codeSize = sizeof(CwrTriangle_vert);
-        shader.pCode = CwrTriangle_vert;
+        shader.codeSize = sizeof(Cwrtriangle_vert);
+        shader.pCode = Cwrtriangle_vert;
         Require(vkCreateShaderModule(_device, &shader, nullptr, &vertex), "create vertex shader");
-        shader.codeSize = sizeof(CwrTriangle_frag);
-        shader.pCode = CwrTriangle_frag;
+        shader.codeSize = sizeof(Cwrtriangle_frag);
+        shader.pCode = Cwrtriangle_frag;
         Require(vkCreateShaderModule(_device, &shader, nullptr, &fragment), "create fragment shader");
         VkPipelineShaderStageCreateInfo stages[2]{};
         stages[0].sType = stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -92,6 +92,8 @@ void VulkanContext::CreateTrianglePipeline()
         pipeline.pViewportState = &viewport;
         pipeline.pRasterizationState = &raster;
         pipeline.pMultisampleState = &samples;
+        VkPipelineDepthStencilStateCreateInfo depth{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+        pipeline.pDepthStencilState = &depth;
         pipeline.pColorBlendState = &blend;
         pipeline.pDynamicState = &dynamic;
         pipeline.layout = _triangleLayout;

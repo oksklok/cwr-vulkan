@@ -307,6 +307,13 @@ int main()
                                       "missing instance/surface must fail");
         CheckThrows<std::logic_error>([&] { context.BeginFrame(800, 600); }, "uninitialized frame must fail");
         context.Clear(0, 0, 0, 1); // No frame: no Vulkan call.
+        context.ClearDepth();
+        const std::array<float, 16> matrix{};
+        const std::array<float, 4> color{1, 1, 1, 1};
+        CheckThrows<std::invalid_argument>([&] { context.UploadMesh(matrix.data(), sizeof(matrix), matrix.data(), 6); },
+                                           "mesh upload without a device must fail before Vulkan calls");
+        CheckThrows<std::logic_error>([&] { context.DrawMesh({}, 0, 3, true, matrix, color); },
+                                      "mesh draw without a frame/buffers must fail before Vulkan calls");
         context.EndFrame();
         context.WaitIdle();
         context.Shutdown();

@@ -242,6 +242,19 @@ assertions), as do the existing 83 driver-free guards. Shape drawing is still
 unsupported at this intermediate milestone; GPU upload is built but not yet
 live-exercised.
 
+Shape milestone 2 (2026-10-10): `PrepareMeshTL` reads the scene camera and
+model-to-world transform using GL33's camera-relative convention; `BeginMeshTL`,
+`DrawSectionTL`, and `EndMeshTL` now record actual indexed mesh draws. The opaque
+untextured shader uses the engine projection (0..1 depth, Vulkan Y inversion)
+and white or `IsColored` scene constant color. Each swapchain image has a depth
+attachment; resize recreates depth/framebuffers/pipelines while retaining mesh
+buffers. Textures/materials, animated meshes, blending and unsupported render
+flags still reject explicitly. Focused extraction/transform tests pass (3 cases,
+19 assertions); 85 driver-free guards pass. The existing live triangle path also
+presents correctly with the new render pass (380 frames, zero validation errors
+or warnings through shutdown). Live Shape integration follows in milestone 3;
+this intermediate commit does not yet claim a visible Shape.
+
 ## Historical driver-free verification (initial foundation)
 
 `PoseidonVKPolicyTests` exercises queue selection, extent/image-count bounds,

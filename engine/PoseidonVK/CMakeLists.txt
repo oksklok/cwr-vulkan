@@ -4,19 +4,21 @@ if(NOT Vulkan_GLSLANG_VALIDATOR_EXECUTABLE)
     message(FATAL_ERROR "Vulkan triangle shaders require glslangValidator from the installed Vulkan SDK")
 endif()
 set(VK_SHADER_HEADERS)
+foreach(kind triangle shape)
 foreach(stage vert frag)
-    set(header "${CMAKE_CURRENT_BINARY_DIR}/generated/PoseidonVK/Shaders/triangle.${stage}.hpp")
+    set(header "${CMAKE_CURRENT_BINARY_DIR}/generated/PoseidonVK/Shaders/${kind}.${stage}.hpp")
     add_custom_command(OUTPUT "${header}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated/PoseidonVK/Shaders"
         COMMAND "${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}" -V --target-env vulkan1.0
-            --vn "CwrTriangle_${stage}" -o "${header}" "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/triangle.${stage}"
-        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/triangle.${stage}" VERBATIM)
+            --vn "Cwr${kind}_${stage}" -o "${header}" "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/${kind}.${stage}"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/${kind}.${stage}" VERBATIM)
     list(APPEND VK_SHADER_HEADERS "${header}")
+endforeach()
 endforeach()
 add_custom_target(PoseidonVKShaders DEPENDS ${VK_SHADER_HEADERS})
 
 add_library(PoseidonVK STATIC VulkanContext.cpp VulkanContext_Triangle.cpp VulkanContext_Mesh.cpp BufferVK.cpp VertexBufferVK.cpp
-    EngineVK.cpp EngineVK_Unsupported.cpp GraphicsBackendVK.cpp)
+    EngineVK.cpp EngineVK_Mesh.cpp EngineVK_Unsupported.cpp GraphicsBackendVK.cpp)
 add_dependencies(PoseidonVK PoseidonVKShaders)
 target_include_directories(PoseidonVK PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(PoseidonVK PUBLIC Poseidon Vulkan::Vulkan)

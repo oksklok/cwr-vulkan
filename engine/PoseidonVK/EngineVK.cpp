@@ -144,10 +144,10 @@ void EngineVK::InitDraw(bool clear, PackedColor color)
     }
 }
 
-void EngineVK::Clear(bool /*clearZ*/, bool clear, PackedColor color)
+void EngineVK::Clear(bool clearZ, bool clear, PackedColor color)
 {
-    // No depth attachment exists in this milestone. Color clear only; acquired
-    // images always begin black even when InitDraw(clear=false). No retained contents.
+    if (clearZ)
+        _vk.ClearDepth();
     if (clear)
         _vk.Clear(((color >> 16) & 255) / 255.0f, ((color >> 8) & 255) / 255.0f, (color & 255) / 255.0f, 1.0f);
 }

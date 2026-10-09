@@ -65,22 +65,6 @@ void EngineVK::EndMesh(TLVertexTable&)
 {
     Unsupported("mesh completion");
 }
-void EngineVK::PrepareMeshTL(const LightList&, const Matrix4&, const render::LegacySpec&)
-{
-    Unsupported("TL mesh preparation");
-}
-void EngineVK::BeginMeshTL(const Shape&, int, bool)
-{
-    Unsupported("TL mesh upload");
-}
-void EngineVK::EndMeshTL(const Shape&)
-{
-    Unsupported("TL mesh completion");
-}
-void EngineVK::DrawSectionTL(const Shape&, int, int)
-{
-    Unsupported("TL mesh drawing");
-}
 void EngineVK::EmitDraw(const render::frame::Draw&)
 {
     Unsupported("indexed draw emission");

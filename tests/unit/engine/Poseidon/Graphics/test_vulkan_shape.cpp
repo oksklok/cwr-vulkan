@@ -1,5 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <PoseidonVK/ShapeGeometryVK.hpp>
+#include <PoseidonVK/ShapeTransformVK.hpp>
+#include <catch2/catch_approx.hpp>
 
 using namespace Poseidon;
 
@@ -22,6 +24,8 @@ TEST_CASE("Vulkan Shape extraction preserves polygon fans and section ranges", "
     face.Set(2, 0);
     shape.AddFace(face);
     ShapeSection section;
+    section.properties.Init();
+    section.material = 0;
     section.beg = first;
     section.end = second;
     shape.AddSection(section);
@@ -57,4 +61,31 @@ TEST_CASE("Vulkan Shape extraction rejects empty and unsectioned shapes", "[Grap
     face.Set(2, 2);
     shape.AddFace(face);
     REQUIRE_THROWS_AS(vk::ExtractShapeGeometry(shape), std::invalid_argument);
+}
+
+TEST_CASE("Vulkan Shape projection preserves transforms and 0..1 depth", "[Graphics][vulkan-shape]")
+{
+    Matrix4 model(MIdentity);
+    model.SetDirectionAndUp(Vector3(1, 0, 0), VUp);
+    model.SetPosition(Vector3(2, 3, 7));
+    Matrix4 projection(MZero);
+    projection(0, 0) = 2;
+    projection(1, 1) = 3;
+    const float near = 0.5f, far = 100;
+    const float q = far / (far - near);
+    projection(2, 2) = q;
+    projection.SetPosition(Vector3(0, 0, -q * near));
+    const auto mvp = vk::ShapeMVP(model, projection);
+    const Vector3 point(1, 2, 3);
+    const Vector3 view = model.FastTransform(point);
+    float clip[4]{};
+    for (int row = 0; row < 4; ++row)
+        clip[row] = mvp[row] * point.X() + mvp[4 + row] * point.Y() + mvp[8 + row] * point.Z() + mvp[12 + row];
+    REQUIRE(clip[0] == Catch::Approx(view.X() * 2));
+    REQUIRE(clip[1] == Catch::Approx(-view.Y() * 3));
+    REQUIRE(clip[2] == Catch::Approx(q * view.Z() - q * near));
+    REQUIRE(clip[3] == Catch::Approx(view.Z()));
+    const auto p = vk::ShapeMVP(MIdentity, projection);
+    REQUIRE((p[10] * near + p[14]) / near == Catch::Approx(0).margin(1e-6));
+    REQUIRE((p[10] * far + p[14]) / far == Catch::Approx(1));
 }

@@ -82,6 +82,7 @@ class EngineVK final : public Engine
     void PrepareMeshTL(const LightList&, const Matrix4&, const render::LegacySpec&) override;
     void BeginMeshTL(const Shape&, int, bool) override;
     void EndMeshTL(const Shape&) override;
+    bool GetTL() const override { return true; }
     void DrawSectionTL(const Shape&, int, int) override;
     VertexBuffer* CreateVertexBuffer(const Shape&, VBType) override;
     void EmitDraw(const render::frame::Draw&) override;
@@ -117,6 +118,10 @@ class EngineVK final : public Engine
     bool _videoInitialized = false;
     bool _paused = false;
     bool _failed = false;
+    bool _meshPrepared = false;
+    const Shape* _activeShape = nullptr;
+    std::array<float, 16> _shapeMVP{};
+    std::array<float, 4> _shapeColor{1, 1, 1, 1};
     void StopAfterFailure(const std::exception& error);
     [[noreturn]] static void Unsupported(const char* feature);
 };

@@ -324,12 +324,25 @@ void VulkanContext::CreateFrameResources()
 
 void VulkanContext::DestroySwapchain() noexcept
 {
+    if (_shapePipeline)
+        vkDestroyPipeline(_device, _shapePipeline, nullptr);
+    _shapePipeline = VK_NULL_HANDLE;
     if (_trianglePipeline)
         vkDestroyPipeline(_device, _trianglePipeline, nullptr);
     _trianglePipeline = VK_NULL_HANDLE;
     for (VkFramebuffer framebuffer : _framebuffers)
         vkDestroyFramebuffer(_device, framebuffer, nullptr);
     _framebuffers.clear();
+    for (auto& depth : _depth)
+    {
+        if (depth.view)
+            vkDestroyImageView(_device, depth.view, nullptr);
+        if (depth.image)
+            vkDestroyImage(_device, depth.image, nullptr);
+        if (depth.memory)
+            vkFreeMemory(_device, depth.memory, nullptr);
+    }
+    _depth.clear();
     if (_renderPass)
         vkDestroyRenderPass(_device, _renderPass, nullptr);
     _renderPass = VK_NULL_HANDLE;
@@ -406,20 +419,48 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
     attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Every acquired image starts with a deterministic clear.
     attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    _depthFormat = VK_FORMAT_UNDEFINED;
+    for (auto candidate : {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D16_UNORM})
+    {
+        VkFormatProperties properties{};
+        vkGetPhysicalDeviceFormatProperties(_physical, candidate, &properties);
+        if (properties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
+        {
+            _depthFormat = candidate;
+            break;
+        }
+    }
+    if (_depthFormat == VK_FORMAT_UNDEFINED)
+        throw std::runtime_error("Vulkan Shape: no supported depth attachment format");
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format = _depthFormat;
+    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    const VkAttachmentDescription attachments[] = {attachment, depthAttachment};
+    const VkAttachmentReference depthReference{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     VkAttachmentReference reference{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &reference;
+    subpass.pDepthStencilAttachment = &depthReference;
     VkSubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                              VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependency.dstStageMask = dependency.srcStageMask;
+    dependency.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                               VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     VkRenderPassCreateInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-    pass.attachmentCount = 1;
-    pass.pAttachments = &attachment;
+    pass.attachmentCount = 2;
+    pass.pAttachments = attachments;
     pass.subpassCount = 1;
     pass.pSubpasses = &subpass;
     pass.dependencyCount = 1;
@@ -430,6 +471,7 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
     _views.reserve(_images.size());
     _framebuffers.reserve(_images.size());
     _rendered.reserve(_images.size());
+    _depth.reserve(_images.size());
     for (size_t i = 0; i < _images.size(); ++i)
     {
         VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
@@ -440,10 +482,13 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
         VkImageView imageView = VK_NULL_HANDLE;
         Check(vkCreateImageView(_device, &view, nullptr, &imageView), "create swapchain image view");
         _views.push_back(imageView);
+        _depth.emplace_back();
+        CreateDepthAttachment(_depth.back());
+        const VkImageView attachmentViews[] = {imageView, _depth.back().view};
         VkFramebufferCreateInfo framebuffer{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
         framebuffer.renderPass = _renderPass;
-        framebuffer.attachmentCount = 1;
-        framebuffer.pAttachments = &_views.back();
+        framebuffer.attachmentCount = 2;
+        framebuffer.pAttachments = attachmentViews;
         framebuffer.width = extent.width;
         framebuffer.height = extent.height;
         framebuffer.layers = 1;
@@ -518,15 +563,16 @@ bool VulkanContext::BeginFrame(uint32_t width, uint32_t height)
     VkCommandBufferBeginInfo commands{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     commands.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     Check(vkBeginCommandBuffer(frame.command, &commands), "begin frame command buffer");
-    VkClearValue black{};
-    black.color.float32[3] = 1.0f;
+    VkClearValue clears[2]{};
+    clears[0].color.float32[3] = 1.0f;
+    clears[1].depthStencil.depth = 1.0f;
     _clearColor = {0, 0, 0, 1};
     VkRenderPassBeginInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     pass.renderPass = _renderPass;
     pass.framebuffer = _framebuffers[_image];
     pass.renderArea.extent = _extent;
-    pass.clearValueCount = 1;
-    pass.pClearValues = &black;
+    pass.clearValueCount = 2;
+    pass.pClearValues = clears;
     vkCmdBeginRenderPass(frame.command, &pass, VK_SUBPASS_CONTENTS_INLINE);
     _frameOpen = true;
     return true;
@@ -541,6 +587,19 @@ void VulkanContext::Clear(float r, float g, float b, float a)
     attachment.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     attachment.colorAttachment = 0;
     attachment.clearValue.color = {{r, g, b, a}};
+    VkClearRect rect{};
+    rect.rect.extent = _extent;
+    rect.layerCount = 1;
+    vkCmdClearAttachments(_frames[_frame].command, 1, &attachment, 1, &rect);
+}
+
+void VulkanContext::ClearDepth()
+{
+    if (!_frameOpen)
+        return;
+    VkClearAttachment attachment{};
+    attachment.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    attachment.clearValue.depthStencil.depth = 1.0f;
     VkClearRect rect{};
     rect.rect.extent = _extent;
     rect.layerCount = 1;
@@ -613,6 +672,9 @@ unsigned VulkanContext::Shutdown() noexcept
         if (_triangleLayout)
             vkDestroyPipelineLayout(_device, _triangleLayout, nullptr);
         _triangleLayout = VK_NULL_HANDLE;
+        if (_shapeLayout)
+            vkDestroyPipelineLayout(_device, _shapeLayout, nullptr);
+        _shapeLayout = VK_NULL_HANDLE;
         for (auto& frame : _frames)
         {
             if (frame.acquired)
