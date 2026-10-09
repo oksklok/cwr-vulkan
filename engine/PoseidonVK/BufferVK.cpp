@@ -39,7 +39,12 @@ VkResult CreateHostVisibleBuffer(VkPhysicalDevice physical, VkDevice device, VkD
     if (result == VK_SUCCESS)
         result = vkBindBufferMemory(device, out.buffer, out.memory, 0);
     if (result == VK_SUCCESS)
-        result = vkMapMemory(device, out.memory, 0, size, 0, &out.mapped);
+    {
+        void* mapped = nullptr;
+        result = vkMapMemory(device, out.memory, 0, size, 0, &mapped);
+        if (result == VK_SUCCESS)
+            out.mapped = mapped;
+    }
     if (result != VK_SUCCESS)
         DestroyBuffer(device, out);
     return result;

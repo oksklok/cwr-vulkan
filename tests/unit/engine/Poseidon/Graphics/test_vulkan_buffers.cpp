@@ -9,6 +9,7 @@
 namespace
 {
 int failAt = 0, step = 0, destroys = 0, frees = 0, unmaps = 0;
+bool poisonFailedMap = false;
 std::array<unsigned char, 256> mappedBytes{};
 template <class T>
 T Handle(uintptr_t value)
@@ -59,7 +60,7 @@ VKAPI_ATTR VkResult VKAPI_CALL vkMapMemory(VkDevice, VkDeviceMemory, VkDeviceSiz
                                            void** out)
 {
     const auto result = Next();
-    if (result == VK_SUCCESS)
+    if (result == VK_SUCCESS || poisonFailedMap)
         *out = mappedBytes.data();
     return result;
 }
@@ -134,5 +135,20 @@ int TestVulkanBuffers()
         check(destroys == (failedStep == 1 ? 0 : 1) && frees == (failedStep == 1 || failedStep == 2 ? 0 : 1),
               "repeated cleanup must be idempotent");
     }
+    // Vulkan does not define output parameters on failure. A non-null pointer
+    // returned with an error must not become proof that this allocation was mapped.
+    failAt = 4;
+    step = destroys = frees = unmaps = 0;
+    poisonFailedMap = true;
+    BufferVK failedMap;
+    check(CreateHostVisibleBuffer(physical, device, 16, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, failedMap) ==
+              VK_ERROR_OUT_OF_DEVICE_MEMORY,
+          "failed map must propagate its error even when the output pointer is non-null");
+    check(!unmaps && destroys == 1 && frees == 1 && !failedMap.buffer && !failedMap.memory && !failedMap.mapped &&
+              !failedMap.size,
+          "failed mapping must never be unmapped; buffer and allocation must still be released");
+    DestroyBuffer(device, failedMap);
+    check(!unmaps && destroys == 1 && frees == 1, "failed-map cleanup must remain idempotent");
+    poisonFailedMap = false;
     return checks;
 }

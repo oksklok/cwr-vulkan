@@ -172,7 +172,7 @@ fake vertex-buffer or geometry-submission implementation was added.
   disabled-layer loader warnings are not validation warnings. No machine overlay
   installation or registry was changed.
 - Vulkan-enabled and GL33-only Game/GameDemo/Tetris, GL33/Dummy and the Poseidon
-  test target build successfully. Driver-free policy CTest passes all **72** checks (original
+  test target build successfully. Driver-free policy CTest passes all **78** checks (original
   42 plus buffer allocation/map/bind failure cleanup, bounds/lifetime and indexed
   layout/draw guards). Factory: 17 cases in each configuration (ON: 94 assertions,
   OFF: 91); window/close regression: 3 cases / 10 assertions in each. No driver is
@@ -191,6 +191,13 @@ Local evidence: `build/vulkan-live/clear/retest.{stdout,stderr}.log` and
 `build/vulkan-live/triangle/{stdout,stderr}.log`, with `initial.png`, `resized.png`
 and `restored.png`. Other GPUs/platforms, normal Vulkan gameplay and non-blocking
 swapchain retirement are not validated by this milestone.
+
+Follow-up error-path fix: mapped pointers become owned only after `vkMapMemory`
+succeeds. Terminal backend shutdown returns the final validation count, so the
+smoke verdict includes destruction-time errors. Driver-free regressions cover a
+failed map with non-null output and an injected teardown-only validation error;
+both build configurations and their focused tests pass. The GPU results above
+precede this follow-up; no new live run was performed for these error-path fixes.
 
 The smallest next step is one immutable, untextured `Shape` through the existing
 `CreateVertexBuffer` / `DrawSectionTL` section/index-range seams, using these buffer

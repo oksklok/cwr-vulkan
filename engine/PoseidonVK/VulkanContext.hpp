@@ -21,7 +21,7 @@ class VulkanContext
     void CreateInstance(const char* const* extensions, uint32_t count, bool validation = false);
     VkInstance Instance() const { return _instance; }
     void CreateDevice(VkSurfaceKHR surface); // Takes ownership even if device setup fails.
-    void Shutdown() noexcept;
+    unsigned Shutdown() noexcept;            // Final validation count, including destruction callbacks.
     void WaitIdle();
     void RequestRecreation() { _recreate = true; }
     bool PrepareSwapchain(uint32_t width, uint32_t height);

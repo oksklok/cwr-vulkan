@@ -14,6 +14,7 @@ class EngineVK final : public Engine
   public:
     explicit EngineVK(const GraphicsEngineParams& params);
     ~EngineVK() override;
+    unsigned Shutdown() noexcept; // Terminal shutdown; returns the final smoke-test validation count.
     EngineVK(const EngineVK&) = delete;
     EngineVK& operator=(const EngineVK&) = delete;
 
@@ -115,7 +116,6 @@ class EngineVK final : public Engine
     bool _videoInitialized = false;
     bool _paused = false;
     bool _failed = false;
-    void Shutdown() noexcept;
     void StopAfterFailure(const std::exception& error);
     [[noreturn]] static void Unsupported(const char* feature);
 };

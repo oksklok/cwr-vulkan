@@ -21,6 +21,9 @@
 #include <Poseidon/Core/Global.hpp>
 #include <Poseidon/Game/Mission/MissionPathLoader.hpp>
 #include <Poseidon/Graphics/Core/Engine.hpp>
+#if CWR_HAS_VULKAN
+#include <PoseidonVK/EngineVK.hpp>
+#endif
 #include <Poseidon/Graphics/Rendering/Draw/FontSystem.hpp>
 #include <Poseidon/World/Scene/ScenePreloader.hpp>
 #include <Poseidon/Graphics/Shared/RenderDocCapture.hpp>
@@ -683,10 +686,12 @@ int GameApplication::RunAfterArgumentParsing()
             engine.reset();
             return 1;
         }
-        const unsigned errors = engine->GetDebugErrorCount();
         GEngine = nullptr;
+        // The explicit vk factory above creates EngineVK. Include destruction-time
+        // validation in the verdict while the owning context is still alive.
+        const unsigned errors = static_cast<EngineVK*>(engine.get())->Shutdown();
         engine.reset(); // Exercise normal device/window destruction, never ExitProcess.
-        LOG_INFO(Graphics, "Vulkan smoke finished: mode={}, frames={}, validation errors before teardown={}",
+        LOG_INFO(Graphics, "Vulkan smoke finished: mode={}, frames={}, final validation errors={}",
                  config.VulkanSmoke(), frames, errors);
         return frames && !errors && Poseidon::Foundation::LoggingSystem::GetErrorCount() == initialErrors ? 0 : 1;
 #else

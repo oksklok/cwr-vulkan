@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
+#include <type_traits>
 
 namespace
 {
@@ -12,6 +13,25 @@ std::vector<const char*> availableInstanceExtensions;
 std::vector<std::string> requestedInstanceExtensions;
 uint32_t requestedApiVersion = 0;
 VkInstanceCreateFlags requestedInstanceFlags = 0;
+PFN_vkDebugUtilsMessengerCallbackEXT instanceCallback = nullptr;
+void* instanceCallbackUser = nullptr;
+bool injectTeardownError = false;
+
+template <class Handle>
+Handle DebugMessengerHandle()
+{
+    if constexpr (std::is_pointer_v<Handle>)
+        return reinterpret_cast<Handle>(uintptr_t{2});
+    else
+        return static_cast<Handle>(2);
+}
+VKAPI_ATTR VkResult VKAPI_CALL CreateDebugMessenger(VkInstance, const VkDebugUtilsMessengerCreateInfoEXT*,
+                                                    const VkAllocationCallbacks*, VkDebugUtilsMessengerEXT* out)
+{
+    *out = DebugMessengerHandle<VkDebugUtilsMessengerEXT>();
+    return VK_SUCCESS;
+}
+VKAPI_ATTR void VKAPI_CALL DestroyDebugMessenger(VkInstance, VkDebugUtilsMessengerEXT, const VkAllocationCallbacks*) {}
 void Check(bool condition, const char* message)
 {
     ++checks;
@@ -63,11 +83,40 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo* info
                                        info->ppEnabledExtensionNames + info->enabledExtensionCount);
     requestedApiVersion = info->pApplicationInfo->apiVersion;
     requestedInstanceFlags = info->flags;
+    instanceCallback = nullptr;
+    instanceCallbackUser = nullptr;
+    for (auto* next = static_cast<const VkBaseInStructure*>(info->pNext); next; next = next->pNext)
+        if (next->sType == VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT)
+        {
+            const auto* debug = reinterpret_cast<const VkDebugUtilsMessengerCreateInfoEXT*>(next);
+            instanceCallback = debug->pfnUserCallback;
+            instanceCallbackUser = debug->pUserData;
+        }
     *instance = reinterpret_cast<VkInstance>(uintptr_t{1});
     return VK_SUCCESS;
 }
 
-VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(VkInstance, const VkAllocationCallbacks*) {}
+VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetInstanceProcAddr(VkInstance, const char* name)
+{
+    if (std::strcmp(name, "vkCreateDebugUtilsMessengerEXT") == 0)
+        return reinterpret_cast<PFN_vkVoidFunction>(&CreateDebugMessenger);
+    if (std::strcmp(name, "vkDestroyDebugUtilsMessengerEXT") == 0)
+        return reinterpret_cast<PFN_vkVoidFunction>(&DestroyDebugMessenger);
+    return nullptr;
+}
+VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(VkInstance, const VkAllocationCallbacks*)
+{
+    // The instance pNext callback remains valid during vkDestroyInstance, after
+    // the persistent debug messenger has already been destroyed.
+    if (injectTeardownError && instanceCallback)
+    {
+        VkDebugUtilsMessengerCallbackDataEXT data{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT};
+        data.pMessageIdName = "TEST-teardown-only";
+        data.pMessage = "Intentional driver-free destruction error";
+        instanceCallback(VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT, VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT,
+                         &data, instanceCallbackUser);
+    }
+}
 int TestVulkanBuffers();
 
 int main()
@@ -184,6 +233,18 @@ int main()
                          VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME) == 1,
               "properties2 supplied by the caller must not be added twice");
         instanceContext.Shutdown();
+
+        availableInstanceExtensions = {VK_KHR_SURFACE_EXTENSION_NAME, VK_EXT_DEBUG_UTILS_EXTENSION_NAME};
+        VulkanContext teardownContext;
+        teardownContext.CreateInstance(surfaceExtensions, 1);
+        Check(teardownContext.ValidationErrors() == 0 && instanceCallback,
+              "teardown regression must start with no validation errors and a registered callback");
+        injectTeardownError = true;
+        Check(teardownContext.Shutdown() == 1,
+              "shutdown must return errors raised only during resource destruction, not the pre-teardown count");
+        injectTeardownError = false;
+        Check(teardownContext.Shutdown() == 1 && !teardownContext.Instance(),
+              "repeated shutdown must retain the final error count without recreating resources");
 
         VulkanContext context;
         CheckThrows<std::logic_error>([&] { context.DrawDiagnosticTriangle(); },

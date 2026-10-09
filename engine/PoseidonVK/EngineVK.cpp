@@ -79,16 +79,17 @@ EngineVK::~EngineVK()
     Shutdown();
 }
 
-void EngineVK::Shutdown() noexcept
+unsigned EngineVK::Shutdown() noexcept
 {
     _events.Detach();
-    _vk.Shutdown(); // Device/swapchain and surface must die before the SDL window.
+    const unsigned errors = _vk.Shutdown(); // Device/swapchain and surface must die before the SDL window.
     if (_window)
         SDL_DestroyWindow(_window);
     _window = nullptr;
     if (_videoInitialized)
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
     _videoInitialized = false;
+    return errors;
 }
 
 void EngineVK::StopAfterFailure(const std::exception& error)

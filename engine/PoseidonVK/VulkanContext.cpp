@@ -593,7 +593,7 @@ void VulkanContext::WaitIdle()
         Check(vkDeviceWaitIdle(_device), "wait device idle");
 }
 
-void VulkanContext::Shutdown() noexcept
+unsigned VulkanContext::Shutdown() noexcept
 {
     const bool hadInstance = _instance != VK_NULL_HANDLE;
     if (_device)
@@ -647,5 +647,6 @@ void VulkanContext::Shutdown() noexcept
             stderr, "Vulkan: shutdown complete; submitted=%llu, presented=%llu, validation errors=%u, warnings=%u\n",
             static_cast<unsigned long long>(_submittedFrames), static_cast<unsigned long long>(_presentedFrames),
             _validationErrors.load(), _validationWarnings.load());
+    return ValidationErrors();
 }
 } // namespace Poseidon::vk
