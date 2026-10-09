@@ -25,6 +25,7 @@
 #include <PoseidonVK/EngineVK.hpp>
 #include <PoseidonVK/SmokeTest.hpp>
 #include "VulkanShapeSmoke.hpp"
+#include "VulkanModelSmoke.hpp"
 #endif
 #include <Poseidon/Graphics/Rendering/Draw/FontSystem.hpp>
 #include <Poseidon/World/Scene/ScenePreloader.hpp>
@@ -646,6 +647,7 @@ int GameApplication::RunAfterArgumentParsing()
             LOG_ERROR(Graphics, "--vulkan-smoke requires explicit --render vk; no fallback is allowed");
             return 1;
         }
+        if (config.VulkanSmoke() == "models" && !ReadConfiguration()) return 1;
         RegisterGraphicsBackends();
         const int initialErrors = Poseidon::Foundation::LoggingSystem::GetErrorCount();
         GraphicsEngineParams params;
@@ -663,6 +665,8 @@ int GameApplication::RunAfterArgumentParsing()
         try
         {
             std::unique_ptr<VulkanShapeSmoke> shape;
+            std::unique_ptr<VulkanModelSmoke> models;
+            if (config.VulkanSmoke() == "models") models = std::make_unique<VulkanModelSmoke>(*engine);
             if (config.VulkanSmoke() == "shape" || config.VulkanSmoke() == "texture")
                 shape = std::make_unique<VulkanShapeSmoke>(*engine, config.VulkanSmoke() == "texture");
             while (engine->IsOpen() && !m_closeRequest &&
@@ -679,6 +683,7 @@ int GameApplication::RunAfterArgumentParsing()
                         engine->DrawTestPattern("triangle");
                     if (shape)
                         shape->Draw(float(SDL_GetTicks() - started) * 0.001f);
+                    if (models) models->Draw(float(SDL_GetTicks() - started) * 0.001f);
                     engine->FinishDraw();
                     ++frames;
                 }

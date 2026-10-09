@@ -398,3 +398,24 @@ with depth overlap, correct UV orientation and window holes; resize/restore and
 normal close passed, 1170 submissions, zero validation errors/warnings. Focused
 decoder/Shape tests: 26 cases/4221 assertions; policy: 85 guards. Blend rendering
 has not yet been visually verified against a stock translucent asset.
+
+## Real stock P3D models (2026-10-10)
+
+`--render vk --vulkan-smoke models --vk-validation` reads normal game configuration,
+mounts stock Data/Data3D PBOs, uses `ModelCache` ODOL loading and `ShapeAdapter`,
+and draws `data3d\dum_mesto.p3d` (561 display vertices, 9 sections) and
+`data3d\jeep.p3d` (3438 vertices, 50 sections) through native `Shape::Draw` with
+the existing `Object` material provider. No renderer-specific model loader.
+Diffuse/emissive material modulation is unlit; stock specular fields do not add
+a specular lobe. Opaque/cutout sections precede back-to-front blend objects using
+the engine section-class filter. Crew/proxy geometry, animation and lighting
+are not demonstrated. Arrows move the camera, PageUp/Down elevate, A/D turn.
+
+RTX captures in `build/shape-live/models-close` and `models-scan-close` were
+inspected: recognizable building and Jeep, original UVs/section textures,
+glass/cutout visibility, depth, resize and restore. Camera movement was visibly
+verified using bounded scan-code input (virtual-key-only injection did not
+reach SDL). Normal close exited 0: 1440 submissions, zero validation errors or
+warnings. Timed 22-second run exited 0: 3321 submissions, zero validation issues
+through teardown. Focused model/adapter/Shape tests: 28 cases/126 assertions.
+These are real models in an integration fixture, not a loaded game world.

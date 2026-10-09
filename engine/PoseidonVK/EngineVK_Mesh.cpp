@@ -9,13 +9,13 @@ namespace Poseidon
 {
 void EngineVK::SetMaterial(const TLMaterial& mat, const LightList& lights, const render::LegacySpec& spec)
 {
-    if (!_activeShape || !vk::SupportedShapeSpec(spec) || lights.Size() != 0 || mat.specFlags != 0 ||
-        mat.specularPower != 0)
+    if (!_activeShape || !vk::SupportedShapeSpec(spec) || lights.Size() != 0 ||
+        !vk::SupportedShapeSpec(render::SplitLegacy(mat.specFlags)))
         Unsupported("Shape material outside basic unlit diffuse");
     _materialColor = {mat.diffuse.R() + mat.emmisive.R(), mat.diffuse.G() + mat.emmisive.G(),
                       mat.diffuse.B() + mat.emmisive.B(), mat.diffuse.A()};
-    if (_materialColor[3] != 1)
-        Unsupported("translucent Shape material");
+    // This is explicitly an unlit diffuse/emissive approximation: no specular
+    // lobe is evaluated, including for stock glass materials.
 }
 
 void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& spec)
@@ -25,14 +25,14 @@ void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& s
     _sectionTexture.reset();
     _sectionSampler = vk::ShapeSampler(spec);
     _sectionAlphaCutoff = 0;
-    _sectionBlend = false;
+    _sectionBlend = _materialColor[3] < 1 || _shapeColor[3] < 1;
     if (mip._texture)
     {
         auto* texture = dynamic_cast<TextureVK*>(mip._texture);
         if (!texture)
             throw std::logic_error("Vulkan section received a foreign texture");
         _sectionAlphaCutoff = texture->GetAlphaClass() == AlphaStats::Cutout ? 0.5f : 0;
-        _sectionBlend = texture->GetAlphaClass() == AlphaStats::Blend;
+        _sectionBlend |= texture->GetAlphaClass() == AlphaStats::Blend;
         _sectionTexture = texture->Image(_vk);
     }
 }
