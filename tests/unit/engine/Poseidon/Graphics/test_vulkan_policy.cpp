@@ -1,5 +1,6 @@
 // Deliberately standalone: no SDL initialization, instance, surface or physical device.
 #include <PoseidonVK/VulkanContext.hpp>
+#include <PoseidonVK/TriangleVK.hpp>
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
@@ -67,12 +68,19 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo* info
 }
 
 VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(VkInstance, const VkAllocationCallbacks*) {}
+int TestVulkanBuffers();
 
 int main()
 {
     using namespace Poseidon::vk;
     try
     {
+        checks += TestVulkanBuffers();
+        Check(sizeof(TriangleVertex) == 20 && sizeof(TriangleIndices[0]) == 2,
+              "diagnostic vertex/index formats must match the pipeline");
+        Check(TriangleIndices == std::array<uint16_t, 3>{2, 0, 1}, "diagnostic must exercise non-sequential indexing");
+        for (auto index : TriangleIndices)
+            Check(index < TriangleVertices.size(), "every index must address a real vertex");
         VkSurfaceCapabilitiesKHR caps{};
         caps.currentExtent = {1920, 1080};
         auto extent = ChooseExtent(caps, 640, 480);
@@ -178,6 +186,8 @@ int main()
         instanceContext.Shutdown();
 
         VulkanContext context;
+        CheckThrows<std::logic_error>([&] { context.DrawDiagnosticTriangle(); },
+                                      "indexed draw must require an acquired recording frame");
         Check(!context.Instance() && !context.FrameOpen(), "context must start empty");
         Check(context.SwapInterval() == 1, "vsync starts enabled");
         context.SetSwapInterval(-1);

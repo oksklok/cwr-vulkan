@@ -524,6 +524,11 @@ void AppConfig::ParseCommandLine(int argc, char** argv)
 
         showOption(initGroup->add_flag("--check", _checkInit, "Initialize subsystems and exit (for smoke tests)"),
                    CliHelpVisibility::Dev);
+        showOption(initGroup->add_option("--vulkan-smoke", _vulkanSmoke,
+                                        "Renderer-only diagnostic: clear or triangle (requires --render vk)")
+                       ->check(CLI::IsMember({"clear", "triangle"})), CliHelpVisibility::Dev);
+        showOption(initGroup->add_flag("--vk-validation", _vulkanValidation,
+                                      "Enable Khronos Vulkan validation when installed"), CliHelpVisibility::Dev);
 
         showOption(initGroup->add_flag("--remount-selftest", _remountSelfTest,
                                        "Boot, perform one in-process re-mount, then exit (re-mount smoke test)"),

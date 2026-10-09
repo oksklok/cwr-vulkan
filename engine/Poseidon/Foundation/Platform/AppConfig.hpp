@@ -65,6 +65,8 @@ public:
     bool NoBanner() const { return _noBanner; }
     
         const std::string& GetRenderBackend() const { return _renderBackend; }
+    const std::string& VulkanSmoke() const { return _vulkanSmoke; }
+    bool VulkanValidation() const { return _vulkanValidation; }
     
     /// Enable Pentium III optimizations (flush-to-zero mode)
     bool EnablePIII() const { return _enablePIII; }
@@ -408,6 +410,8 @@ private:
     // Initialization flags
     bool _noMap = false;
     bool _checkInit = false;
+    std::string _vulkanSmoke;
+    bool _vulkanValidation = false;
     bool _remountSelfTest = false;
     bool _modCycleSelfTest = false;
     bool _reloadCleanSelfTest = false;

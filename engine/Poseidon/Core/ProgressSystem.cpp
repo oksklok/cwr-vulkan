@@ -110,7 +110,8 @@ void ProgressSystem::SetRest(float value)
 
 bool ProgressSystem::Active() const
 {
-    return GEngine->TextBank() && (_progressTitle.GetLength() > 0 || _progressDisplay);
+    // Window-close checks also run before content/texture initialization.
+    return (_progressTitle.GetLength() > 0 || _progressDisplay) && GEngine && GEngine->TextBank();
 }
 
 void ProgressSystem::Draw()

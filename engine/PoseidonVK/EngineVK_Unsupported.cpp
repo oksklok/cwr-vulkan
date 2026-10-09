@@ -5,7 +5,7 @@ namespace Poseidon
 {
 [[noreturn]] void EngineVK::Unsupported(const char* feature)
 {
-    throw std::logic_error(std::string("PoseidonVK clear/present foundation: ") + feature +
+    throw std::logic_error(std::string("PoseidonVK experimental backend: ") + feature +
                            " is not implemented; use --render gl33 for game rendering");
 }
 
@@ -88,10 +88,6 @@ VertexBuffer* EngineVK::CreateVertexBuffer(const Shape&, VBType)
 void EngineVK::EmitDraw(const render::frame::Draw&)
 {
     Unsupported("indexed draw emission");
-}
-void EngineVK::DrawTestPattern(const char*)
-{
-    Unsupported("test pattern drawing");
 }
 void EngineVK::SetMaterial(const TLMaterial&, const LightList&, const render::LegacySpec&)
 {

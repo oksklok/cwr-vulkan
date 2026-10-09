@@ -1,15 +1,18 @@
-# Vulkan backend foundation
+# Vulkan backend development
 
 `PoseidonVK` is an opt-in SDL3 Vulkan backend registered as `vk`. GL33 remains
-the default and reference game renderer. This stage can clear and present a
-window; it cannot render game content.
+the default and reference game renderer. Clear/present and an opt-in indexed
+triangle diagnostic work; normal game-content rendering remains unsupported.
 
 ## Build and selection
 
 Configure the normal Windows Clang preset with `-DCWR_HAS_VULKAN=ON` and an
 installed/system Vulkan SDK. CMake uses `find_package(Vulkan REQUIRED)` and
 `Vulkan::Vulkan`; no Vulkan dependency framework is vendored. The option defaults
-to OFF, so normal GL33 builds do not require or link Vulkan.
+to OFF, so normal GL33 builds do not require or link Vulkan. The indexed triangle
+also requires the SDK's `glslangValidator`: CMake compiles the two GLSL sources to
+embedded SPIR-V 1.0 at build time (no runtime shader compiler). SDL3's `vulkan`
+vcpkg feature must be enabled; its Windows default otherwise rejects Vulkan windows.
 
 ```powershell
 cmake --preset win-x64-clang-rwdi -DCWR_HAS_VULKAN=ON
@@ -25,8 +28,19 @@ compatible driver has been verified. Creation reports errors and returns null.
 Vulkan has lower factory priority than Dummy, so automatic selection preserves
 the existing GL33-to-Dummy fallback instead of selecting an unfinished renderer.
 
-Do not launch the game to verify this milestone. Selecting `vk` during normal
-game startup will encounter explicitly unsupported content-rendering calls.
+Use the explicit renderer-only smoke mode for live testing:
+
+```powershell
+PoseidonGame.exe -C <GOG-Remastered-3.05-directory> --render vk --vulkan-smoke triangle --vk-validation --width 800 --height 600 --timeout 30
+```
+
+`--vulkan-smoke clear` tests the original clear/present path. Both modes use the
+existing backend factory and SDL window/event loop, stop before game-content and
+audio initialization, never fall back to GL33, and exercise normal destruction
+on timeout or window close. A disabled Vulkan build rejects the option. Normal
+game startup with `--render vk` still encounters explicit unsupported calls.
+Use the existing `POSEIDON_USER_DIR`, `POSEIDON_CACHE_DIR` and `POSEIDON_TEMP_DIR`
+redirects to keep test writes outside the retail content directory.
 
 ## Ownership and frame lifecycle
 
@@ -42,9 +56,12 @@ game startup will encounter explicitly unsupported content-rendering calls.
   resource and rendering entry points. It does not inherit Dummy's no-op draws.
 
 Instance creation uses SDL's required surface extensions, optional debug-utils
-object names and optional portability enumeration. No validation layer is
-required or enabled implicitly. A Vulkan 1.0 device is sufficient; portability
-subset is enabled when the selected device advertises it.
+object names and optional portability enumeration. `--vk-validation` explicitly
+requests Khronos validation and synchronization validation when available;
+absence is logged, never reported as a validation pass. Warning/error callbacks
+include their message IDs. Loader diagnostics are distinguished from validation
+messages. A Vulkan 1.0 device is sufficient; portability subset is enabled when
+advertised, with its properties2 instance dependency retained.
 
 Device selection requires graphics and presentation queues, the swapchain
 extension, usable surface formats/present modes, and color-attachment image
@@ -79,8 +96,9 @@ with potentially stranded synchronization objects.
 Resize and fullscreen/pixel-size events request deferred recreation. Recreation
 waits for device idle, destroys the old image resources, and rebuilds from fresh
 surface capabilities. Minimized windows retain old resources until drawable.
-Shutdown waits idle, destroys framebuffers/render pass/views/semaphores and the
-swapchain, then frame synchronization, command pool, device, surface, instance,
+Shutdown waits idle, destroys the triangle pipeline before the render pass,
+then framebuffers/views/semaphores and swapchain, immutable geometry buffers,
+pipeline layout, frame synchronization, command pool, device, surface, instance,
 SDL window and the backend's SDL video reference. Partial initialization cleanup
 and repeated shutdown are supported. This uses the conventional core-Vulkan
 idle-based swapchain teardown; presentation fences/maintenance extensions and
@@ -93,8 +111,9 @@ Vulkan uses SDL's fullscreen path and does not initialize the GL ImGui renderer.
 
 ## Deliberately unsupported
 
-No graphics pipeline, shader, vertex/index upload, draw emission, 2D/UI/font
-rendering, texture bank/loading/upload, material binding, mesh/TL path, depth
+Only the diagnostic triangle has a pipeline, shaders and vertex/index upload.
+Normal geometry submission, 2D/UI/font rendering, texture bank/loading/upload,
+material binding, mesh/TL path, depth
 buffer, depth bias, gamma correction or shadow rendering is implemented.
 Required draw/resource methods throw an actionable `std::logic_error`; neutral
 gamma/bias requests are allowed, and unsupported capabilities report false.
@@ -105,7 +124,79 @@ monitor switching and readback are not.
 No GL33 renderer replacement, assets, localization, modern shading, upscaling or
 renderer redesign is part of this change.
 
-## Verification
+## Indexed triangle and donor reuse
+
+`EngineVK::DrawTestPattern("triangle")` is allowed only with
+`--vulkan-smoke triangle`. Three immutable position/color vertices and uint16
+indices **2,0,1** are uploaded into coherent host-visible buffers, bound to a
+minimal graphics pipeline and drawn with `vkCmdDrawIndexed`. Dynamic viewport,
+scissor and aspect compensation follow the swapchain extent. Both frame slots
+share read-only geometry; resize rebuilds the pipeline against the new render
+pass, retaining buffers/layout. Device-idle teardown releases all resources.
+
+Selectively adapted from **Deus-Ex (koosoli)**, `koosoli/PoseidonVK` commit
+`7523bd5d3afcc13f13e51050d7c717ca103a7c19`: the host-visible allocation/map/unmap
+pattern in `BufferVK.hpp/.cpp` and `bootstrap_triangle.vert.glsl` /
+`bootstrap_triangle.frag.glsl`. These remain GPL-3.0-or-later with the additional
+Bohemia terms in `LICENSE`. Buffer ownership/bounds/failure cleanup were tightened;
+the shader UBO/descriptors were removed in favor of 32-byte push constants. The
+pipeline, smoke loop and integration adapt to our existing context, frame slots
+and per-image present synchronization; donor texture/mesh/framework code was not
+incorporated. Official 3.05 renderer seams and working lifecycle code are retained.
+
+The backend-private `BufferVK` helper accepts buffer size/usage independently of
+the triangle. It is the minimal preparation for `Engine::CreateVertexBuffer` and
+`DrawSectionTL`: GL33's existing `Shape` path fan-triangulates polygons and tracks
+per-section index ranges. Those engine entry points still throw in Vulkan; no
+fake vertex-buffer or geometry-submission implementation was added.
+
+## Live verification (2026-10-09)
+
+- GPU: NVIDIA GeForce RTX 4060 Ti, driver 617.14 (Windows 32.0.16.1714), Vulkan
+  1.4.351; installed SDK/Khronos validation layer 1.4.350.0. API requests remain 1.0.
+- Used `PoseidonGame` against the authorized local GOG Remastered 3.05 content
+  directory with user/cache/temp redirected under ignored `build/vulkan-live`.
+  The renderer-only diagnostic does not claim game-world Vulkan compatibility.
+- First live clear attempt exposed SDL3's missing Vulkan build feature. After
+  enabling it, clear/present and resizing worked. Normal close then exposed an
+  inactive progress query unnecessarily calling the unsupported texture bank;
+  a guarded short-circuit fixes this shared startup/close seam, with regression test.
+- Clear retest: two resize recreations, 230 submitted frames, normal shutdown,
+  zero validation errors/warnings. Triangle: visibly correct at 800x600,
+  1104x801 and 704x501, also after minimize/restore; 11,038 submitted frames,
+  normal close exit 0, zero core/synchronization validation errors or warnings
+  including resource destruction. Pipeline recreation occurred for every new
+  swapchain; geometry was uploaded once.
+- One external loader error remains: a stale Epic Online Services overlay JSON
+  path. Implicit overlays were disabled only for the test processes; their
+  disabled-layer loader warnings are not validation warnings. No machine overlay
+  installation or registry was changed.
+- Vulkan-enabled and GL33-only Game/GameDemo/Tetris, GL33/Dummy and the Poseidon
+  test target build successfully. Driver-free policy CTest passes all **72** checks (original
+  42 plus buffer allocation/map/bind failure cleanup, bounds/lifetime and indexed
+  layout/draw guards). Factory: 17 cases in each configuration (ON: 94 assertions,
+  OFF: 91); window/close regression: 3 cases / 10 assertions in each. No driver is
+  called by these tests.
+- Final rebuilt clear/triangle timeout checks both exit 0 with zero validation
+  errors/warnings, including teardown. Missing explicit `--render vk` and a
+  Vulkan-disabled build both reject the diagnostic with exit 1. Default GL33
+  `--check --nosound` exits 0 against the same content; the existing missing
+  `biscamel\icamel2.paa` warning is not changed. Import inspection confirms no
+  `vulkan-1.dll` dependency in the GL33-only executable.
+- Game-local content, localization and resources retain identical before/after
+  file-count/size/timestamp snapshots. No assets or distribution settings changed.
+  Formatting and `git diff --check` pass; no dependency blocker remains.
+
+Local evidence: `build/vulkan-live/clear/retest.{stdout,stderr}.log` and
+`build/vulkan-live/triangle/{stdout,stderr}.log`, with `initial.png`, `resized.png`
+and `restored.png`. Other GPUs/platforms, normal Vulkan gameplay and non-blocking
+swapchain retirement are not validated by this milestone.
+
+The smallest next step is one immutable, untextured `Shape` through the existing
+`CreateVertexBuffer` / `DrawSectionTL` section/index-range seams, using these buffer
+and pipeline primitives. It has not been started.
+
+## Historical driver-free verification (initial foundation)
 
 `PoseidonVKPolicyTests` exercises queue selection, extent/image-count bounds,
 format/present/composite-alpha fallback, recreation classification and empty
@@ -146,14 +237,11 @@ into the backend. There is no remaining dependency blocker for this build.
   headless software-rendered Studio 50/50 passed.
 - New C++ files pass clang-format checks; `git diff --check` passes.
 
-Legacy tests using absolute `/tmp` paths ran through a temporary drive alias
+At the initial foundation stage, legacy tests using absolute `/tmp` paths ran through a temporary drive alias
 rooted in this worktree's ignored build directory; user/cache/temp directories
 were also redirected there. No game executable was launched and no Vulkan
 instance, physical device or live clear/present frame was tested. Before/after
 file-count/size/timestamp snapshots of `game-local/Remastered`, localization and
-resources are identical. Physical driver behavior remains deliberately unverified.
-
-The next renderer milestone is one untextured triangle through the existing
-engine draw seams, preceded by live validation of this clear/present lifecycle,
-including resize, minimize/restore and fullscreen transitions. It is not started
-in this change.
+resources were identical. Physical driver behavior was unverified at that stage;
+the live results above supersede that limitation. These broader historical suites
+were not all rerun for the indexed-triangle change.

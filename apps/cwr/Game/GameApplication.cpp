@@ -48,6 +48,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <optional>
+#include <memory>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -631,6 +632,68 @@ int GameApplication::Run(int argc, char** argv)
 
 int GameApplication::RunAfterArgumentParsing()
 {
+    if (!AppConfig::Instance().VulkanSmoke().empty())
+    {
+#if CWR_HAS_VULKAN
+        const auto& config = AppConfig::Instance();
+        if (config.GetRenderBackend() != "vk")
+        {
+            LOG_ERROR(Graphics, "--vulkan-smoke requires explicit --render vk; no fallback is allowed");
+            return 1;
+        }
+        RegisterGraphicsBackends();
+        const int initialErrors = Poseidon::Foundation::LoggingSystem::GetErrorCount();
+        GraphicsEngineParams params;
+        params.width = config.GetWindowWidth();
+        params.height = config.GetWindowHeight();
+        params.useWindow = true;
+        params.displayMode = "windowed";
+        std::unique_ptr<Engine> engine(GraphicsEngineFactory::Create("vk", params));
+        if (!engine)
+            return 1;
+        GEngine = engine.get();
+        engine->SetMouseGrab(false);
+        const uint64_t started = SDL_GetTicks();
+        unsigned frames = 0;
+        try
+        {
+            while (engine->IsOpen() && !m_closeRequest &&
+                   (config.AppTimeoutSeconds() <= 0 ||
+                    SDL_GetTicks() - started < config.AppTimeoutSeconds() * 1000.0f))
+            {
+                engine->HandleEvents();
+                if (!engine->IsOpen())
+                    break;
+                engine->InitDraw(true, PackedColor(0xff102038));
+                if (engine->InitDrawDone())
+                {
+                    if (config.VulkanSmoke() == "triangle")
+                        engine->DrawTestPattern("triangle");
+                    engine->FinishDraw();
+                    ++frames;
+                }
+                SDL_Delay(1);
+            }
+            engine->StopAll();
+        }
+        catch (const std::exception& error)
+        {
+            LOG_ERROR(Graphics, "Vulkan smoke failed: {}", error.what());
+            GEngine = nullptr;
+            engine.reset();
+            return 1;
+        }
+        const unsigned errors = engine->GetDebugErrorCount();
+        GEngine = nullptr;
+        engine.reset(); // Exercise normal device/window destruction, never ExitProcess.
+        LOG_INFO(Graphics, "Vulkan smoke finished: mode={}, frames={}, validation errors before teardown={}",
+                 config.VulkanSmoke(), frames, errors);
+        return frames && !errors && Poseidon::Foundation::LoggingSystem::GetErrorCount() == initialErrors ? 0 : 1;
+#else
+        LOG_ERROR(Graphics, "--vulkan-smoke requires a build with CWR_HAS_VULKAN=ON");
+        return 1;
+#endif
+    }
     LOG_INFO(Core, "Game starting: version {}", (const char*)GetVersionString());
 
     constexpr const char* kStartupErrorTitle = "Cold War Assault - Startup Error";

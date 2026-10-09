@@ -1,7 +1,9 @@
 #pragma once
 
 #include <PoseidonVK/SwapchainPolicy.hpp>
+#include <PoseidonVK/BufferVK.hpp>
 #include <array>
+#include <atomic>
 #include <string>
 
 namespace Poseidon::vk
@@ -16,7 +18,7 @@ class VulkanContext
     VulkanContext(const VulkanContext&) = delete;
     VulkanContext& operator=(const VulkanContext&) = delete;
 
-    void CreateInstance(const char* const* extensions, uint32_t count);
+    void CreateInstance(const char* const* extensions, uint32_t count, bool validation = false);
     VkInstance Instance() const { return _instance; }
     void CreateDevice(VkSurfaceKHR surface); // Takes ownership even if device setup fails.
     void Shutdown() noexcept;
@@ -27,10 +29,12 @@ class VulkanContext
     int SwapInterval() const { return _swapInterval; }
     bool BeginFrame(uint32_t width, uint32_t height);
     void Clear(float r, float g, float b, float a);
+    void DrawDiagnosticTriangle(); // Explicit DrawTestPattern seam, never an automatic gameplay draw.
     void EndFrame();
     bool FrameOpen() const { return _frameOpen; }
     VkExtent2D Extent() const { return _extent; }
     const std::string& DeviceName() const { return _deviceName; }
+    unsigned ValidationErrors() const { return _validationErrors.load(); }
 
   private:
     struct Frame
@@ -65,6 +69,22 @@ class VulkanContext
     std::string _deviceName;
     PFN_vkSetDebugUtilsObjectNameEXT _setName = nullptr;
     bool _debugNamesEnabled = false;
+    VkDebugUtilsMessengerEXT _debugMessenger = VK_NULL_HANDLE;
+    bool _validationEnabled = false;
+    std::atomic<unsigned> _validationErrors{0}, _validationWarnings{0};
+    uint64_t _submittedFrames = 0, _presentedFrames = 0;
+    unsigned _swapchainGeneration = 0;
+    BufferVK _triangleVertices, _triangleIndices;
+    VkPipelineLayout _triangleLayout = VK_NULL_HANDLE;
+    VkPipeline _trianglePipeline = VK_NULL_HANDLE;
+    std::array<float, 4> _clearColor{0, 0, 0, 1};
+    bool _loggedTriangle = false;
+    void CreateTrianglePipeline();
+
+    static VKAPI_ATTR VkBool32 VKAPI_CALL ValidationMessage(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+                                                            VkDebugUtilsMessageTypeFlagsEXT types,
+                                                            const VkDebugUtilsMessengerCallbackDataEXT* data,
+                                                            void* user);
 
     void SelectDevice();
     void CreateFrameResources();

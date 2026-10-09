@@ -2,9 +2,11 @@
 
 #include <Poseidon/Graphics/Shared/WindowPlacement.hpp>
 #include <Poseidon/Foundation/Logging/Logging.hpp>
+#include <Poseidon/Foundation/Platform/AppConfig.hpp>
 #include <SDL3/SDL_vulkan.h>
 #include <algorithm>
 #include <stdexcept>
+#include <cstring>
 
 namespace Poseidon
 {
@@ -41,7 +43,9 @@ EngineVK::EngineVK(const GraphicsEngineParams& params)
         config.displayMode = params.useWindow ? "windowed" : params.displayMode;
         const auto placement = ResolveWindowPlacement(config, desktopWidth, desktopHeight, refresh);
         _window =
-            SDL_CreateWindow("CWR Remastered [Vulkan: clear/present foundation]", placement.width, placement.height,
+            SDL_CreateWindow(AppConfig::Instance().VulkanSmoke() == "triangle" ? "CWRR [Vulkan: indexed triangle smoke]"
+                                                                               : "CWRR [Vulkan: clear/present]",
+                             placement.width, placement.height,
                              SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE);
         RequireSDL(_window != nullptr, "create Vulkan window");
         _width = params.width;
@@ -51,7 +55,7 @@ EngineVK::EngineVK(const GraphicsEngineParams& params)
         uint32_t extensionCount = 0;
         const char* const* extensions = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
         RequireSDL(extensions != nullptr, "get Vulkan instance extensions");
-        _vk.CreateInstance(extensions, extensionCount);
+        _vk.CreateInstance(extensions, extensionCount, AppConfig::Instance().VulkanValidation());
         VkSurfaceKHR surface = VK_NULL_HANDLE;
         RequireSDL(SDL_Vulkan_CreateSurface(_window, _vk.Instance(), nullptr, &surface), "create Vulkan surface");
         _vk.CreateDevice(surface);
@@ -60,7 +64,7 @@ EngineVK::EngineVK(const GraphicsEngineParams& params)
         // No acquire/present at construction; a zero drawable defers creation.
         _vk.PrepareSwapchain(static_cast<uint32_t>(std::max(_width, 0)), static_cast<uint32_t>(std::max(_height, 0)));
         _events.Attach(_window, _width, _height);
-        LOG_INFO(Graphics, "Vulkan: initialized {} (SDL3), {}x{}, clear/present only", _vk.DeviceName(), _width,
+        LOG_INFO(Graphics, "Vulkan: initialized {} (SDL3), {}x{}, diagnostic renderer", _vk.DeviceName(), _width,
                  _height);
     }
     catch (...)
@@ -97,12 +101,15 @@ void EngineVK::StopAfterFailure(const std::exception& error)
 
 RString EngineVK::GetDebugName() const
 {
-    return RString(("PoseidonVK / " + _vk.DeviceName() + " / clear-present only").c_str());
+    return RString(
+        ("PoseidonVK / " + _vk.DeviceName() +
+         (AppConfig::Instance().VulkanSmoke() == "triangle" ? " / indexed triangle smoke" : " / clear-present"))
+            .c_str());
 }
 
 RString EngineVK::GetRendererName() const
 {
-    return "Vulkan (SDL3, experimental clear/present)";
+    return "Vulkan (SDL3, experimental)";
 }
 
 void EngineVK::InitDraw(bool clear, PackedColor color)
@@ -164,6 +171,13 @@ void EngineVK::Pause()
     FinishDraw(); // Consume a successful acquire before pausing.
     _paused = true;
     StopAll();
+}
+
+void EngineVK::DrawTestPattern(const char* name)
+{
+    if (AppConfig::Instance().VulkanSmoke() != "triangle" || !name || std::strcmp(name, "triangle") != 0)
+        Unsupported("non-diagnostic test-pattern drawing");
+    _vk.DrawDiagnosticTriangle();
 }
 
 void EngineVK::Restore()

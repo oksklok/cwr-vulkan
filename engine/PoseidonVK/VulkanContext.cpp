@@ -1,6 +1,7 @@
 #include <PoseidonVK/VulkanContext.hpp>
 
 #include <cstring>
+#include <cstdio>
 #include <stdexcept>
 #include <type_traits>
 
@@ -58,7 +59,28 @@ VulkanContext::~VulkanContext()
     Shutdown();
 }
 
-void VulkanContext::CreateInstance(const char* const* extensions, uint32_t count)
+VKAPI_ATTR VkBool32 VKAPI_CALL VulkanContext::ValidationMessage(VkDebugUtilsMessageSeverityFlagBitsEXT severity,
+                                                                VkDebugUtilsMessageTypeFlagsEXT types,
+                                                                const VkDebugUtilsMessengerCallbackDataEXT* data,
+                                                                void* user)
+{
+    auto& context = *static_cast<VulkanContext*>(user);
+    const bool error = (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) != 0;
+    const bool validation = (types & VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT) != 0;
+    if (validation)
+    {
+        if (error)
+            ++context._validationErrors;
+        else
+            ++context._validationWarnings;
+    }
+    std::fprintf(stderr, "Vulkan %s %s [%s]: %s\n", validation ? "validation" : "loader", error ? "ERROR" : "WARNING",
+                 data->pMessageIdName ? data->pMessageIdName : "unknown",
+                 data->pMessage ? data->pMessage : "no message");
+    return VK_FALSE;
+}
+
+void VulkanContext::CreateInstance(const char* const* extensions, uint32_t count, bool validation)
 {
     if (_instance)
         throw std::logic_error("Vulkan: instance already created");
@@ -92,15 +114,68 @@ void VulkanContext::CreateInstance(const char* const* extensions, uint32_t count
 #endif
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.pApplicationName = "CWR Remastered";
-    app.pEngineName = "PoseidonVK (clear/present foundation)";
+    app.pEngineName = "PoseidonVK (diagnostic indexed rendering)";
     app.apiVersion = VK_API_VERSION_1_0;
     VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     info.flags = flags;
     info.pApplicationInfo = &app;
+    const char* layerName = "VK_LAYER_KHRONOS_validation";
+    VkDebugUtilsMessengerCreateInfoEXT debug{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
+    debug.messageSeverity =
+        VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+    debug.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
+                        VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+    debug.pfnUserCallback = &ValidationMessage;
+    debug.pUserData = this;
+    VkValidationFeaturesEXT features{VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT};
+    const VkValidationFeatureEnableEXT sync = VK_VALIDATION_FEATURE_ENABLE_SYNCHRONIZATION_VALIDATION_EXT;
+    bool syncValidation = false;
+    if (validation)
+    {
+        auto layers = EnumerateList<VkLayerProperties>([](uint32_t* n, VkLayerProperties* p)
+                                                       { return vkEnumerateInstanceLayerProperties(n, p); },
+                                                       "enumerate validation layers");
+        _validationEnabled = std::any_of(layers.begin(), layers.end(), [&](const VkLayerProperties& layer)
+                                         { return std::strcmp(layer.layerName, layerName) == 0; });
+        if (_validationEnabled)
+        {
+            info.enabledLayerCount = 1;
+            info.ppEnabledLayerNames = &layerName;
+            auto layerExtensions = EnumerateList<VkExtensionProperties>(
+                [&](uint32_t* n, VkExtensionProperties* p)
+                { return vkEnumerateInstanceExtensionProperties(layerName, n, p); }, "enumerate layer extensions");
+            if (HasExtension(layerExtensions, VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME))
+            {
+                enabled.push_back(VK_EXT_VALIDATION_FEATURES_EXTENSION_NAME);
+                features.enabledValidationFeatureCount = 1;
+                features.pEnabledValidationFeatures = &sync;
+                info.pNext = &features;
+                syncValidation = true;
+            }
+        }
+        else
+            std::fprintf(stderr, "Vulkan: requested Khronos validation layer unavailable; validation NOT active\n");
+    }
+    if (_debugNamesEnabled)
+    {
+        debug.pNext = info.pNext;
+        info.pNext = &debug;
+    }
     info.enabledExtensionCount = static_cast<uint32_t>(enabled.size());
     info.ppEnabledExtensionNames = enabled.data();
     // Validation may be enabled externally with VK_INSTANCE_LAYERS.
     Check(vkCreateInstance(&info, nullptr, &_instance), "create instance");
+    if (_debugNamesEnabled)
+    {
+        auto create = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+            vkGetInstanceProcAddr(_instance, "vkCreateDebugUtilsMessengerEXT"));
+        if (!create)
+            throw std::runtime_error("Vulkan: debug-utils messenger entry point unavailable");
+        debug.pNext = nullptr;
+        Check(create(_instance, &debug, nullptr, &_debugMessenger), "create validation messenger");
+    }
+    std::fprintf(stderr, "Vulkan: instance created (API 1.0); validation=%s, synchronization validation=%s\n",
+                 _validationEnabled ? "on" : "off", syncValidation ? "on" : "off");
 }
 
 void VulkanContext::SelectDevice()
@@ -154,6 +229,9 @@ void VulkanContext::SelectDevice()
             _physical = physical;
             _families = families;
             _deviceName = deviceProperties.deviceName;
+            std::fprintf(stderr, "Vulkan: candidate '%s', api=%u, driver=%u, queues=%u/%u\n",
+                         deviceProperties.deviceName, deviceProperties.apiVersion, deviceProperties.driverVersion,
+                         families.graphics, families.present);
         }
     }
     if (!_physical)
@@ -202,6 +280,7 @@ void VulkanContext::CreateDevice(VkSurfaceKHR surface)
     if (_present != _graphics)
         Name(VK_OBJECT_TYPE_QUEUE, ObjectHandle(_present), "PoseidonVK present queue");
     CreateFrameResources();
+    std::fprintf(stderr, "Vulkan: logical device ready: %s, two frame slots\n", _deviceName.c_str());
 }
 
 void VulkanContext::Name(VkObjectType type, uint64_t handle, const char* name) const
@@ -244,6 +323,9 @@ void VulkanContext::CreateFrameResources()
 
 void VulkanContext::DestroySwapchain() noexcept
 {
+    if (_trianglePipeline)
+        vkDestroyPipeline(_device, _trianglePipeline, nullptr);
+    _trianglePipeline = VK_NULL_HANDLE;
     for (VkFramebuffer framebuffer : _framebuffers)
         vkDestroyFramebuffer(_device, framebuffer, nullptr);
     _framebuffers.clear();
@@ -378,6 +460,9 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
         Name(VK_OBJECT_TYPE_SEMAPHORE, ObjectHandle(rendered), (prefix + " present").c_str());
     }
     _recreate = false;
+    std::fprintf(stderr, "Vulkan: swapchain #%u ready: %ux%u, %zu images, format=%d, present mode=%d\n",
+                 ++_swapchainGeneration, _extent.width, _extent.height, _images.size(), format.format,
+                 info.presentMode);
     return true;
 }
 
@@ -433,6 +518,7 @@ bool VulkanContext::BeginFrame(uint32_t width, uint32_t height)
     Check(vkBeginCommandBuffer(frame.command, &commands), "begin frame command buffer");
     VkClearValue black{};
     black.color.float32[3] = 1.0f;
+    _clearColor = {0, 0, 0, 1};
     VkRenderPassBeginInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     pass.renderPass = _renderPass;
     pass.framebuffer = _framebuffers[_image];
@@ -448,6 +534,7 @@ void VulkanContext::Clear(float r, float g, float b, float a)
 {
     if (!_frameOpen)
         return;
+    _clearColor = {r, g, b, a};
     VkClearAttachment attachment{};
     attachment.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
     attachment.colorAttachment = 0;
@@ -477,7 +564,8 @@ void VulkanContext::EndFrame()
     // Reset only immediately before submitting. An out-of-date acquire must
     // never strand a reset fence with no workload to signal it.
     Check(vkResetFences(_device, 1, &frame.submitted), "reset frame fence");
-    Check(vkQueueSubmit(_graphics, 1, &submit, frame.submitted), "submit clear frame");
+    Check(vkQueueSubmit(_graphics, 1, &submit, frame.submitted), "submit frame");
+    ++_submittedFrames;
     VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
     present.waitSemaphoreCount = 1;
     present.pWaitSemaphores = &_rendered[_image];
@@ -491,6 +579,12 @@ void VulkanContext::EndFrame()
         _recreate = true;
     else
         Check(result, "present frame");
+    if (result == VK_SUCCESS || result == VK_SUBOPTIMAL_KHR)
+    {
+        if (!_presentedFrames)
+            std::fprintf(stderr, "Vulkan: first frame submitted and presented\n");
+        ++_presentedFrames;
+    }
 }
 
 void VulkanContext::WaitIdle()
@@ -501,11 +595,18 @@ void VulkanContext::WaitIdle()
 
 void VulkanContext::Shutdown() noexcept
 {
+    const bool hadInstance = _instance != VK_NULL_HANDLE;
     if (_device)
     {
         // Also safe after partial initialization or device loss; shutdown must not throw.
         vkDeviceWaitIdle(_device);
         DestroySwapchain();
+        // Immutable geometry can be shared by both frame slots; teardown follows device idle.
+        DestroyBuffer(_device, _triangleIndices);
+        DestroyBuffer(_device, _triangleVertices);
+        if (_triangleLayout)
+            vkDestroyPipelineLayout(_device, _triangleLayout, nullptr);
+        _triangleLayout = VK_NULL_HANDLE;
         for (auto& frame : _frames)
         {
             if (frame.acquired)
@@ -523,6 +624,14 @@ void VulkanContext::Shutdown() noexcept
     if (_surface)
         vkDestroySurfaceKHR(_instance, _surface, nullptr);
     _surface = VK_NULL_HANDLE;
+    if (_debugMessenger)
+    {
+        auto destroy = reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(
+            vkGetInstanceProcAddr(_instance, "vkDestroyDebugUtilsMessengerEXT"));
+        if (destroy)
+            destroy(_instance, _debugMessenger, nullptr);
+        _debugMessenger = VK_NULL_HANDLE;
+    }
     if (_instance)
         vkDestroyInstance(_instance, nullptr);
     _instance = VK_NULL_HANDLE;
@@ -533,5 +642,10 @@ void VulkanContext::Shutdown() noexcept
     _frameOpen = false;
     _recreate = true;
     _frame = 0;
+    if (hadInstance)
+        std::fprintf(
+            stderr, "Vulkan: shutdown complete; submitted=%llu, presented=%llu, validation errors=%u, warnings=%u\n",
+            static_cast<unsigned long long>(_submittedFrames), static_cast<unsigned long long>(_presentedFrames),
+            _validationErrors.load(), _validationWarnings.load());
 }
 } // namespace Poseidon::vk

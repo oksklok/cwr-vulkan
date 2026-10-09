@@ -1,9 +1,30 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <Poseidon/Core/Application.hpp>
+#include <Poseidon/Core/ProgressSystem.hpp>
+#include <Poseidon/Graphics/Dummy/EngineDummy.hpp>
+#include <stdexcept>
 
 using Poseidon::ShouldHonorWindowClose;
 using Poseidon::ShouldReportInGameplayForWindowClose;
+
+TEST_CASE("inactive progress queries do not require renderer texture support", "[core][application][window][graphics]")
+{
+    struct Guard
+    {
+        Poseidon::Engine* previous = Poseidon::GEngine;
+        ~Guard() { Poseidon::GEngine = previous; }
+    } guard;
+    struct NoTextureEngine : Poseidon::EngineDummy
+    {
+        Poseidon::AbstractTextBank* TextBank() override { throw std::logic_error("texture bank is unsupported"); }
+    } engine;
+    Poseidon::ProgressSystem progress;
+    Poseidon::GEngine = &engine;
+    REQUIRE_FALSE(progress.Active());
+    Poseidon::GEngine = nullptr;
+    REQUIRE_FALSE(progress.Active());
+}
 
 // Alt+F4 must quit from non-game contexts (menus, briefing, the Esc dialog) but
 // stay a valid in-game shortcut (Alt = freelook, F4 = select unit 4) during active

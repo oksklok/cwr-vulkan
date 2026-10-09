@@ -23,6 +23,6 @@ void RegisterVKGraphicsBackend()
 {
     // Deliberately opt-in only: below Dummy's priority so Auto cannot select an
     // unfinished game renderer when GL33 initialization fails. Explicit vk still works.
-    GraphicsEngineFactory::Register({"vk", "Vulkan (SDL3, experimental clear/present)", -100, &CreateVK, nullptr});
+    GraphicsEngineFactory::Register({"vk", "Vulkan (SDL3, experimental)", -100, &CreateVK, nullptr});
 }
 } // namespace Poseidon
