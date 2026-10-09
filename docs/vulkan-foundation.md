@@ -477,4 +477,35 @@ case skipped, 4355 assertions passed; driver-free policy/lifetime guards: 85.
 
 Limitations: original top mip only, no streaming/eviction, native lighting/fog
 approximation, no projected/shadow-map effects, decals or 3D line/point effects.
-Normal menu/intro rendering is demonstrated; mission gameplay is not yet tested.
+Normal menu/intro rendering is demonstrated; see the stock mission check below.
+
+## Final integration checks (2026-10-10)
+
+Normal `--render vk --vk-validation --test-mission <stock Missions/01TakeTheCar.ABEL>`
+uses the existing isolated mission-test staging and normal simulation/Scene path,
+without any Vulkan smoke flag. RTX captures in `build/shape-live/stock-mission-input`
+were inspected: textured terrain, town buildings, cutout trees, sky, first-person
+M16 and HUD. Bounded Right/Up input visibly turned/moved the player. Wide/small
+resize, minimize/restore and normal close passed: 98 submissions/97 presentations,
+exit 0, zero Khronos core/synchronization validation errors or warnings. This is
+real mission rendering and basic movement, not full campaign/combat qualification.
+Radio text contains replacement glyphs; its encoding/font path remains unresolved.
+
+Normal startup's previously ignored `--timeout` now closes the ordinary main loop
+cleanly (default zero remains unlimited). A 22-second menu/intro run in
+`build/shape-live/normal-timed-fixed` exited 0 after resize/restore, 194/193 frames,
+zero validation issues through shutdown. Final triangle, textured native Shape
+and real-model smoke regressions also passed visually, including lifecycle checks:
+1189, 1183 and 1427 submissions respectively, zero validation issues. The loader
+still reports a stale installed EOS overlay manifest; disabled implicit overlay
+messages are separate from Khronos validation and no overlay registry was changed.
+
+Vulkan-enabled and GL33-only builds passed. Final focused asset/geometry/factory
+tests: 63 passed, one archived external-data WRP case skipped, 4410 assertions;
+font/shutdown tests: 18 cases/327 assertions; policy guards: 85. GL33-only factory
+and Shape tests: 13 cases/94 assertions. Default GL33 checks passed in both builds;
+the GL33-only normal menu/intro was visibly inspected and closed cleanly in
+`build/shape-live/final-gl33-menu`. Stock game/resources metadata hashes remain
+unchanged; all profiles, staged missions and screenshots are under ignored build
+directories. Next useful rendering improvement: original mip-chain upload/sampling
+to reduce visible distant-texture aliasing, then broader mission/effect coverage.

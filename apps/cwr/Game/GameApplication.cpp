@@ -1016,6 +1016,8 @@ void GameApplication::PollStrictAbort()
 
 void GameApplication::RunMainLoop()
 {
+    const auto runStarted = SDL_GetTicks();
+    const float timeoutSeconds = AppConfig::Instance().AppTimeoutSeconds();
     // Wait for startup progress script (startup.sqs) to complete.
     // Dedicated servers skip this — the dummy engine can't advance the script.
     if (!ENGINE_CONFIG.doCreateDedicatedServer)
@@ -1111,6 +1113,12 @@ void GameApplication::RunMainLoop()
 
     while (!m_closeRequest)
     {
+        if (timeoutSeconds > 0 && SDL_GetTicks() - runStarted >= timeoutSeconds * 1000.0f)
+        {
+            LOG_INFO(Core, "App timeout reached: {} seconds", timeoutSeconds);
+            m_closeRequest = true;
+            break;
+        }
         GDebugger.ProcessAlive(); // keep watchdog thread happy
         Poseidon::AppIdle();      // simulate + render one frame
 
@@ -1306,6 +1314,12 @@ void GameApplication::RunMainLoop()
 
     while (!m_closeRequest)
     {
+        if (timeoutSeconds > 0 && SDL_GetTicks() - runStarted >= timeoutSeconds * 1000.0f)
+        {
+            LOG_INFO(Core, "App timeout reached: {} seconds", timeoutSeconds);
+            m_closeRequest = true;
+            break;
+        }
         PollStrictAbort(); // --strict: stop on any ERROR logged since last iteration
 
         if (GEngine)
