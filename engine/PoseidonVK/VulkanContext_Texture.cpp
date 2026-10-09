@@ -23,8 +23,9 @@ void TextureImage::Destroy() noexcept
     {
         if (pool)
             vkDestroyDescriptorPool(device, pool, nullptr);
-        if (sampler)
-            vkDestroySampler(device, sampler, nullptr);
+        for (auto sampler : samplers)
+            if (sampler)
+                vkDestroySampler(device, sampler, nullptr);
         if (view)
             vkDestroyImageView(device, view, nullptr);
         if (image)
@@ -127,30 +128,36 @@ std::shared_ptr<TextureImage> VulkanContext::UploadTexture(uint32_t width, uint3
         view.format = image.format;
         view.subresourceRange = barrier.subresourceRange;
         Require(vkCreateImageView(_device, &view, nullptr, &texture->view), "create texture view");
-        VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-        sampler.magFilter = sampler.minFilter = VK_FILTER_LINEAR;
-        sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-        sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        Require(vkCreateSampler(_device, &sampler, nullptr, &texture->sampler), "create sampler");
-        const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+        const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8};
         VkDescriptorPoolCreateInfo pool{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-        pool.maxSets = pool.poolSizeCount = 1;
+        pool.maxSets = 8;
+        pool.poolSizeCount = 1;
         pool.pPoolSizes = &size;
         Require(vkCreateDescriptorPool(_device, &pool, nullptr, &texture->pool), "create texture descriptor pool");
         VkDescriptorSetAllocateInfo set{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
         set.descriptorPool = texture->pool;
         set.descriptorSetCount = 1;
         set.pSetLayouts = &_textureLayout;
-        Require(vkAllocateDescriptorSets(_device, &set, &texture->descriptor), "allocate texture descriptor");
-        const VkDescriptorImageInfo imageInfo{texture->sampler, texture->view,
-                                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-        VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-        write.dstSet = texture->descriptor;
-        write.dstBinding = 0;
-        write.descriptorCount = 1;
-        write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        write.pImageInfo = &imageInfo;
-        vkUpdateDescriptorSets(_device, 1, &write, 0, nullptr);
+        for (unsigned i = 0; i < 8; ++i)
+        {
+            VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+            sampler.magFilter = sampler.minFilter = (i & 4) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+            sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+            sampler.addressModeU = (i & 1) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            sampler.addressModeV = (i & 2) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            Require(vkCreateSampler(_device, &sampler, nullptr, &texture->samplers[i]), "create sampler");
+            Require(vkAllocateDescriptorSets(_device, &set, &texture->descriptors[i]), "allocate texture descriptor");
+            const VkDescriptorImageInfo imageInfo{texture->samplers[i], texture->view,
+                                                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            write.dstSet = texture->descriptors[i];
+            write.dstBinding = 0;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            write.pImageInfo = &imageInfo;
+            vkUpdateDescriptorSets(_device, 1, &write, 0, nullptr);
+        }
     }
     catch (...)
     {

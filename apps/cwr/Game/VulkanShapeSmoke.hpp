@@ -27,7 +27,10 @@ class VulkanShapeSmoke
             GUseFileBanks = true;
             GFileBanks.Load("dta\\", "dta\\", "data", true);
             _textures[0] = _engine.TextBank()->Load("data\\domek1_front_okna.pac");
-            _textures[1] = _engine.TextBank()->Load("data\\domek1_side.pac");
+            _textures[1] = _engine.TextBank()->Load("data\\domek2_side.paa");
+            if (_engine.TextBank()->Load("DATA/domek2_side.paa").GetRef() != _textures[1].GetRef() ||
+                _engine.TextBank()->NTextures() != 2)
+                throw std::runtime_error("Vulkan texture smoke: canonical-name cache failed");
         }
         const int faces[][4] = {{0, 1, 2, 3}, {4, 7, 6, 5}, {0, 3, 7, 4}, {1, 5, 6, 2}, {3, 2, 6, 7}, {0, 4, 5, 1}};
         ShapeSection sections[6];

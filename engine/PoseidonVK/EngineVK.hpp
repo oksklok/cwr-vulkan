@@ -126,6 +126,9 @@ class EngineVK final : public Engine
     std::array<float, 4> _shapeColor{1, 1, 1, 1};
     std::array<float, 4> _materialColor{1, 1, 1, 1};
     std::shared_ptr<vk::TextureImage> _sectionTexture;
+    unsigned _sectionSampler = 0;
+    float _sectionAlphaCutoff = 0;
+    bool _sectionBlend = false;
     void StopAfterFailure(const std::exception& error);
     [[noreturn]] static void Unsupported(const char* feature);
 };

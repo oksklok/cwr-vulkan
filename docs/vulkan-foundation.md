@@ -384,3 +384,17 @@ in `build/shape-live/texture-close`, including resize/minimize/restore. Exit 0,
 Shape tests: 26 cases/4219 assertions; policy guards: 85. Alpha textures currently
 fail explicitly; stock `domek2_side.paa` decoded successfully as cutout but is not
 yet a supported draw. This is the next section-pipeline milestone.
+
+## Textured sections (2026-10-10)
+
+The texture fixture now draws stock PAC opaque and PAA cutout sections through
+`Shape::Draw`. RGBA alpha is classified by the engine decoder; cutout discards
+below 0.5 while retaining depth writes. A source-alpha blend variant disables
+depth writes, with ordering left to the existing scene/section-class passes.
+Clamp U/V, repeat and point/linear section samplers are supported. Other effects
+and depth overrides remain errors. No lighting or texture-streaming framework.
+`build/shape-live/cutout-close`: two textured native Shapes visually inspected
+with depth overlap, correct UV orientation and window holes; resize/restore and
+normal close passed, 1170 submissions, zero validation errors/warnings. Focused
+decoder/Shape tests: 26 cases/4221 assertions; policy: 85 guards. Blend rendering
+has not yet been visually verified against a stock translucent asset.

@@ -11,9 +11,21 @@ namespace Poseidon::vk
 {
 inline bool SupportedShapeSpec(const render::LegacySpec& spec)
 {
-    return spec.backend == render::Backend::None &&
-           (spec.material == render::Material::None || spec.material == render::Material::DisableSun) &&
-           (spec.routing == render::Routing::None || spec.routing == render::Routing::IsColored);
+    const auto backend = render::Backend::IsAlpha | render::Backend::IsTransparent | render::Backend::PointSampling |
+                         render::Backend::NoClamp | render::Backend::ClampU | render::Backend::ClampV;
+    const auto material = render::Material::DisableSun | render::Material::BestMipmap;
+    const auto routing = render::Routing::IsColored | render::Routing::IsAlphaOrdered | render::Routing::NoShadow |
+                         render::Routing::ShadowDisabled | render::Routing::FogDisabled | render::Routing::NoDropdown;
+    return (spec.backend & ~backend) == render::Backend::None &&
+           (spec.material & ~material) == render::Material::None && (spec.routing & ~routing) == render::Routing::None;
+}
+inline unsigned ShapeSampler(const render::LegacySpec& spec)
+{
+    const unsigned point = (spec.backend & render::Backend::PointSampling) != render::Backend::None ? 4 : 0;
+    if ((spec.backend & render::Backend::NoClamp) != render::Backend::None)
+        return point;
+    return point | ((spec.backend & render::Backend::ClampU) != render::Backend::None ? 1 : 0) |
+           ((spec.backend & render::Backend::ClampV) != render::Backend::None ? 2 : 0);
 }
 inline void RequireImmutableShape(bool dynamic, bool dirty)
 {

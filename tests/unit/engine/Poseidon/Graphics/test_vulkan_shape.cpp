@@ -101,7 +101,11 @@ TEST_CASE("Vulkan Shape accepts opaque color but rejects unfinished render state
     spec.backend = render::Backend::NoZWrite;
     REQUIRE_FALSE(vk::SupportedShapeSpec(spec));
     spec.backend = render::Backend::IsTransparent;
-    REQUIRE_FALSE(vk::SupportedShapeSpec(spec));
+    REQUIRE(vk::SupportedShapeSpec(spec));
+    spec.backend = render::Backend::ClampU | render::Backend::PointSampling;
+    REQUIRE(vk::ShapeSampler(spec) == 5);
+    spec.backend = spec.backend | render::Backend::NoClamp;
+    REQUIRE(vk::ShapeSampler(spec) == 4);
     spec.backend = render::Backend::None;
     spec.material = render::Material::IsAnimated;
     REQUIRE_FALSE(vk::SupportedShapeSpec(spec));

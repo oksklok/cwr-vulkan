@@ -27,9 +27,9 @@ struct TextureImage
     VkImage image = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
     VkImageView view = VK_NULL_HANDLE;
-    VkSampler sampler = VK_NULL_HANDLE;
+    std::array<VkSampler, 8> samplers{};
     VkDescriptorPool pool = VK_NULL_HANDLE;
-    VkDescriptorSet descriptor = VK_NULL_HANDLE;
+    std::array<VkDescriptorSet, 8> descriptors{};
     ~TextureImage();
     void Destroy() noexcept;
 };
@@ -61,7 +61,8 @@ class VulkanContext
     std::shared_ptr<TextureImage> UploadTexture(uint32_t width, uint32_t height, const void* rgba);
     void DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t firstIndex, uint32_t count, bool index16,
                   const std::array<float, 16>& mvp, const std::array<float, 4>& color,
-                  const std::shared_ptr<TextureImage>& texture = {});
+                  const std::shared_ptr<TextureImage>& texture = {}, unsigned sampler = 0, float alphaCutoff = 0,
+                  bool blend = false);
     void EndFrame();
     bool FrameOpen() const { return _frameOpen; }
     VkExtent2D Extent() const { return _extent; }
@@ -104,8 +105,9 @@ class VulkanContext
     VkFormat _depthFormat = VK_FORMAT_UNDEFINED;
     VkPipelineLayout _shapeLayout = VK_NULL_HANDLE;
     VkPipeline _shapePipeline = VK_NULL_HANDLE;
+    VkPipeline _blendPipeline = VK_NULL_HANDLE;
     bool _loggedShape = false;
-    void CreateShapePipeline();
+    void CreateShapePipeline(bool blend = false);
     void CreateDepthAttachment(DepthAttachment& depth);
     std::vector<VkImage> _images;
     std::vector<VkImageView> _views;

@@ -54,11 +54,11 @@ std::shared_ptr<MeshBuffers> VulkanContext::UploadMesh(const void* vertices, siz
     return mesh;
 }
 
-void VulkanContext::CreateShapePipeline()
+void VulkanContext::CreateShapePipeline(bool translucent)
 {
     if (!_shapeLayout)
     {
-        const VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 80};
+        const VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 84};
         VkPipelineLayoutCreateInfo layout{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         CreateTextureLayout();
         layout.setLayoutCount = 1;
@@ -107,8 +107,16 @@ void VulkanContext::CreateShapePipeline()
         samples.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
         VkPipelineDepthStencilStateCreateInfo depth{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
         depth.depthTestEnable = depth.depthWriteEnable = VK_TRUE;
+        if (translucent)
+            depth.depthWriteEnable = VK_FALSE;
         depth.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
         VkPipelineColorBlendAttachmentState attachment{};
+        attachment.blendEnable = translucent;
+        attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        attachment.colorBlendOp = attachment.alphaBlendOp = VK_BLEND_OP_ADD;
+        attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
         attachment.colorWriteMask =
             VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
@@ -131,7 +139,8 @@ void VulkanContext::CreateShapePipeline()
         pipeline.pDynamicState = &dynamic;
         pipeline.layout = _shapeLayout;
         pipeline.renderPass = _renderPass;
-        Require(vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &_shapePipeline),
+        Require(vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &pipeline, nullptr,
+                                          translucent ? &_blendPipeline : &_shapePipeline),
                 "create graphics pipeline");
     }
     catch (...)
@@ -150,7 +159,8 @@ void VulkanContext::CreateShapePipeline()
 
 void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t firstIndex, uint32_t count,
                              bool index16, const std::array<float, 16>& mvp, const std::array<float, 4>& color,
-                             const std::shared_ptr<TextureImage>& texture)
+                             const std::shared_ptr<TextureImage>& texture, unsigned sampler, float alphaCutoff,
+                             bool blend)
 {
     if (!_frameOpen || !mesh || mesh->device != _device || !mesh->vertices.buffer || !mesh->indices.buffer)
         throw std::logic_error("Vulkan Shape: indexed draw needs an open frame and live buffers from this device");
@@ -167,17 +177,19 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     const auto& sampled = texture ? texture : _whiteTexture;
     if (sampled->device != _device)
         throw std::logic_error("Vulkan Shape: texture is not live on this device");
-    if (!_shapePipeline)
-        CreateShapePipeline();
+    if (sampler >= 8)
+        throw std::out_of_range("Vulkan Shape: sampler index");
+    if (!(blend ? _blendPipeline : _shapePipeline))
+        CreateShapePipeline(blend);
     auto& frame = _frames[_frame];
     // Retain each mesh once per frame until that frame's submission fence completes.
     if (std::find(frame.meshes.begin(), frame.meshes.end(), mesh) == frame.meshes.end())
         frame.meshes.push_back(mesh);
     if (std::find(frame.textures.begin(), frame.textures.end(), sampled) == frame.textures.end())
         frame.textures.push_back(sampled);
-    vkCmdBindPipeline(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapePipeline);
-    vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 0, 1, &sampled->descriptor, 0,
-                            nullptr);
+    vkCmdBindPipeline(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, blend ? _blendPipeline : _shapePipeline);
+    vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 0, 1,
+                            &sampled->descriptors[sampler], 0, nullptr);
     const VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(frame.command, 0, 1, &mesh->vertices.buffer, &offset);
     vkCmdBindIndexBuffer(frame.command, mesh->indices.buffer, 0, index16 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
@@ -185,9 +197,10 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     const VkRect2D scissor{{0, 0}, _extent};
     vkCmdSetViewport(frame.command, 0, 1, &viewport);
     vkCmdSetScissor(frame.command, 0, 1, &scissor);
-    std::array<float, 20> constants{};
+    std::array<float, 21> constants{};
     std::copy(mvp.begin(), mvp.end(), constants.begin());
     std::copy(color.begin(), color.end(), constants.begin() + 16);
+    constants[20] = alphaCutoff;
     vkCmdPushConstants(frame.command, _shapeLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(constants), constants.data());
     vkCmdDrawIndexed(frame.command, count, 1, firstIndex, 0, 0);

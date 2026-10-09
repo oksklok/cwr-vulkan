@@ -324,6 +324,8 @@ void VulkanContext::CreateFrameResources()
 
 void VulkanContext::DestroySwapchain() noexcept
 {
+    if (_blendPipeline) vkDestroyPipeline(_device, _blendPipeline, nullptr);
+    _blendPipeline = VK_NULL_HANDLE;
     if (_shapePipeline)
         vkDestroyPipeline(_device, _shapePipeline, nullptr);
     _shapePipeline = VK_NULL_HANDLE;
