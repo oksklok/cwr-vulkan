@@ -1,19 +1,19 @@
 # Vulkan is opt-in. GL33-only builds never search for, or link, the SDK.
 find_package(Vulkan REQUIRED)
 if(NOT Vulkan_GLSLANG_VALIDATOR_EXECUTABLE)
-    message(FATAL_ERROR "Vulkan triangle shaders require glslangValidator from the installed Vulkan SDK")
+    message(FATAL_ERROR "Vulkan shaders require glslangValidator from the installed Vulkan SDK")
 endif()
 set(VK_SHADER_HEADERS)
 foreach(kind triangle shape)
-foreach(stage vert frag)
-    set(header "${CMAKE_CURRENT_BINARY_DIR}/generated/PoseidonVK/Shaders/${kind}.${stage}.hpp")
-    add_custom_command(OUTPUT "${header}"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated/PoseidonVK/Shaders"
-        COMMAND "${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}" -V --target-env vulkan1.0
-            --vn "Cwr${kind}_${stage}" -o "${header}" "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/${kind}.${stage}"
-        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/${kind}.${stage}" VERBATIM)
-    list(APPEND VK_SHADER_HEADERS "${header}")
-endforeach()
+    foreach(stage vert frag)
+        set(header "${CMAKE_CURRENT_BINARY_DIR}/generated/PoseidonVK/Shaders/${kind}.${stage}.hpp")
+        add_custom_command(OUTPUT "${header}"
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated/PoseidonVK/Shaders"
+            COMMAND "${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}" -V --target-env vulkan1.0
+                --vn "Cwr${kind}_${stage}" -o "${header}" "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/${kind}.${stage}"
+            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/${kind}.${stage}" VERBATIM)
+        list(APPEND VK_SHADER_HEADERS "${header}")
+    endforeach()
 endforeach()
 add_custom_target(PoseidonVKShaders DEPENDS ${VK_SHADER_HEADERS})
 

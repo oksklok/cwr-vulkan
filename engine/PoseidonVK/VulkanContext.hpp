@@ -13,6 +13,9 @@ namespace Poseidon::vk
 // even allocations whose engine-side Shape outlives the Vulkan device.
 struct MeshBuffers
 {
+    MeshBuffers() = default;
+    MeshBuffers(const MeshBuffers&) = delete;
+    MeshBuffers& operator=(const MeshBuffers&) = delete;
     VkDevice device = VK_NULL_HANDLE;
     BufferVK vertices, indices;
     ~MeshBuffers();

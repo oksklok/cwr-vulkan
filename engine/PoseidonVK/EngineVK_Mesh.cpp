@@ -6,16 +6,16 @@
 
 namespace Poseidon
 {
-void EngineVK::PrepareMeshTL(const LightList&, const Matrix4& modelToWorld, const render::LegacySpec& spec)
+void EngineVK::PrepareMeshTL(const LightList& lights, const Matrix4& modelToWorld, const render::LegacySpec& spec)
 {
     if (!_vk.FrameOpen() || !GScene || !GScene->GetCamera())
         throw std::logic_error("Vulkan Shape: mesh preparation needs an open frame and scene camera");
     // This stage is strictly opaque, untextured, unlit geometry. Do not accept
     // blend/shadow/depth overrides or animated materials as successful draws.
-    if (spec.backend != render::Backend::None ||
-        (spec.material != render::Material::None && spec.material != render::Material::DisableSun) ||
-        (spec.routing != render::Routing::None && spec.routing != render::Routing::IsColored))
+    if (!vk::SupportedShapeSpec(spec))
         Unsupported("Shape render flags outside opaque untextured/IsColored");
+    if (lights.Size() != 0)
+        Unsupported("Shape lighting");
     const auto* camera = GScene->GetCamera();
     Matrix4 relative = modelToWorld;
     relative.SetPosition(modelToWorld.Position() - camera->Position());
@@ -37,7 +37,7 @@ void EngineVK::BeginMeshTL(const Shape& shape, int spec, bool dynamic)
 {
     if (!_meshPrepared || _activeShape)
         throw std::logic_error("Vulkan Shape: BeginMeshTL requires preparation and no active mesh");
-    if (spec != 0)
+    if (!vk::SupportedShapeSpec(render::SplitLegacy(spec)))
         Unsupported("BeginMeshTL flags");
     auto* buffer = dynamic_cast<VertexBufferVK*>(shape.GetVertexBuffer());
     if (!buffer)

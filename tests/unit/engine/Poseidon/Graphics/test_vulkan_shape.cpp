@@ -89,3 +89,26 @@ TEST_CASE("Vulkan Shape projection preserves transforms and 0..1 depth", "[Graph
     REQUIRE((p[10] * near + p[14]) / near == Catch::Approx(0).margin(1e-6));
     REQUIRE((p[10] * far + p[14]) / far == Catch::Approx(1));
 }
+
+TEST_CASE("Vulkan Shape accepts opaque color but rejects unfinished render states and updates",
+          "[Graphics][vulkan-shape]")
+{
+    render::LegacySpec spec;
+    REQUIRE(vk::SupportedShapeSpec(spec));
+    spec.routing = render::Routing::IsColored;
+    spec.material = render::Material::DisableSun;
+    REQUIRE(vk::SupportedShapeSpec(spec));
+    spec.backend = render::Backend::NoZWrite;
+    REQUIRE_FALSE(vk::SupportedShapeSpec(spec));
+    spec.backend = render::Backend::IsTransparent;
+    REQUIRE_FALSE(vk::SupportedShapeSpec(spec));
+    spec.backend = render::Backend::None;
+    spec.material = render::Material::IsAnimated;
+    REQUIRE_FALSE(vk::SupportedShapeSpec(spec));
+    spec.material = render::Material::None;
+    spec.routing = render::Routing::OnSurface;
+    REQUIRE_FALSE(vk::SupportedShapeSpec(spec));
+    REQUIRE_NOTHROW(vk::RequireImmutableShape(false, false));
+    REQUIRE_THROWS_AS(vk::RequireImmutableShape(true, false), std::logic_error);
+    REQUIRE_THROWS_AS(vk::RequireImmutableShape(false, true), std::logic_error);
+}

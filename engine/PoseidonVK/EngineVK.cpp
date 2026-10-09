@@ -42,11 +42,12 @@ EngineVK::EngineVK(const GraphicsEngineParams& params)
         config.height = params.height;
         config.displayMode = params.useWindow ? "windowed" : params.displayMode;
         const auto placement = ResolveWindowPlacement(config, desktopWidth, desktopHeight, refresh);
-        _window =
-            SDL_CreateWindow(AppConfig::Instance().VulkanSmoke() == "triangle" ? "CWRR [Vulkan: indexed triangle smoke]"
-                                                                               : "CWRR [Vulkan: clear/present]",
-                             placement.width, placement.height,
-                             SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE);
+        const auto& smoke = AppConfig::Instance().VulkanSmoke();
+        _window = SDL_CreateWindow(smoke == "shape"      ? "CWRR [Vulkan: engine Shape smoke]"
+                                   : smoke == "triangle" ? "CWRR [Vulkan: indexed triangle smoke]"
+                                                         : "CWRR [Vulkan: clear/present]",
+                                   placement.width, placement.height,
+                                   SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE);
         RequireSDL(_window != nullptr, "create Vulkan window");
         _width = params.width;
         _height = params.height;
@@ -81,6 +82,8 @@ EngineVK::~EngineVK()
 
 unsigned EngineVK::Shutdown() noexcept
 {
+    _activeShape = nullptr;
+    _meshPrepared = false;
     _events.Detach();
     const unsigned errors = _vk.Shutdown(); // Device/swapchain and surface must die before the SDL window.
     if (_window)
@@ -102,10 +105,11 @@ void EngineVK::StopAfterFailure(const std::exception& error)
 
 RString EngineVK::GetDebugName() const
 {
-    return RString(
-        ("PoseidonVK / " + _vk.DeviceName() +
-         (AppConfig::Instance().VulkanSmoke() == "triangle" ? " / indexed triangle smoke" : " / clear-present"))
-            .c_str());
+    return RString(("PoseidonVK / " + _vk.DeviceName() +
+                    (AppConfig::Instance().VulkanSmoke() == "shape"      ? " / engine Shape smoke"
+                     : AppConfig::Instance().VulkanSmoke() == "triangle" ? " / indexed triangle smoke"
+                                                                         : " / clear-present"))
+                       .c_str());
 }
 
 RString EngineVK::GetRendererName() const

@@ -7,7 +7,7 @@
 
 namespace Poseidon
 {
-// An explicit clear/present foundation, not yet a game-content renderer.
+// Opt-in clear/present and immutable untextured Shape rendering.
 // Inherits Engine directly: Dummy's successful no-op draw paths are not used.
 class EngineVK final : public Engine
 {

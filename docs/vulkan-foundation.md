@@ -21,8 +21,9 @@ Historical runtime results below retain their original context; migration checks
 are reported separately, not substituted for those artifacts.
 
 `PoseidonVK` is an opt-in SDL3 Vulkan backend registered as `vk`. GL33 remains
-the default and reference game renderer. Clear/present and an opt-in indexed
-triangle diagnostic work; normal game-content rendering remains unsupported.
+the default and reference game renderer. Clear/present, indexed triangle and
+immutable untextured engine Shape drawing work. Normal game startup remains
+blocked by the unfinished texture/material/UI systems.
 
 ## Build and selection
 
@@ -54,7 +55,8 @@ Use the explicit renderer-only smoke mode for live testing:
 PoseidonGame.exe -C <GOG-Remastered-3.05-directory> --render vk --vulkan-smoke triangle --vk-validation --width 800 --height 600 --timeout 30
 ```
 
-`--vulkan-smoke clear` tests the original clear/present path. Both modes use the
+`--vulkan-smoke clear` tests the original clear/present path; `--vulkan-smoke shape`
+constructs a real engine Shape and uses the production geometry virtuals. All modes use the
 existing backend factory and SDL window/event loop, stop before game-content and
 audio initialization, never fall back to GL33, and exercise normal destruction
 on timeout or window close. A disabled Vulkan build rejects the option. Normal
@@ -103,8 +105,9 @@ resetting the fence. Suboptimal acquire is consumed and presented before rebuild
 The render pass transitions an undefined image into color-attachment use and
 finally into presentation layout. Every frame begins with opaque black;
 `Clear` records a full color clear using the engine's packed RGB convention.
-There is no retained framebuffer-content contract or depth attachment yet.
-`clearZ` has no effect because no depth image exists.
+There is no retained framebuffer-content contract. Each swapchain image now has
+a D32 (D16 fallback) depth attachment cleared to 1 every frame; `clearZ` also
+supports an explicit depth clear.
 
 `FinishDraw` closes and submits the command buffer, then presents. The submit
 waits at color-attachment output. Fences reset only immediately before submit.
@@ -118,7 +121,7 @@ Resize and fullscreen/pixel-size events request deferred recreation. Recreation
 waits for device idle, destroys the old image resources, and rebuilds from fresh
 surface capabilities. Minimized windows retain old resources until drawable.
 Shutdown waits idle, destroys the triangle pipeline before the render pass,
-then framebuffers/views/semaphores and swapchain, immutable geometry buffers,
+then framebuffers/depth attachments/views/semaphores and swapchain, immutable geometry buffers,
 pipeline layout, frame synchronization, command pool, device, surface, instance,
 SDL window and the backend's SDL video reference. Partial initialization cleanup
 and repeated shutdown are supported. This uses the conventional core-Vulkan
@@ -132,10 +135,9 @@ Vulkan uses SDL's fullscreen path and does not initialize the GL ImGui renderer.
 
 ## Deliberately unsupported
 
-Only the diagnostic triangle has a pipeline, shaders and vertex/index upload.
-Normal geometry submission, 2D/UI/font rendering, texture bank/loading/upload,
-material binding, mesh/TL path, depth
-buffer, depth bias, gamma correction or shadow rendering is implemented.
+Immutable opaque untextured Shape/TL submission and depth testing are implemented.
+Dynamic/animated geometry, 2D/UI/font rendering, texture bank/loading/upload,
+material binding, depth bias, gamma correction and shadow rendering remain unsupported.
 Required draw/resource methods throw an actionable `std::logic_error`; neutral
 gamma/bias requests are allowed, and unsupported capabilities report false.
 Optional engine features otherwise retain the base interface's unsupported
@@ -168,8 +170,8 @@ incorporated. Official 3.05 renderer seams and working lifecycle code are retain
 The backend-private `BufferVK` helper accepts buffer size/usage independently of
 the triangle. It is the minimal preparation for `Engine::CreateVertexBuffer` and
 `DrawSectionTL`: GL33's existing `Shape` path fan-triangulates polygons and tracks
-per-section index ranges. Those engine entry points still throw in Vulkan; no
-fake vertex-buffer or geometry-submission implementation was added.
+per-section index ranges. The Shape milestones below implement those production
+engine entry points using the same packing and polygon-fan conventions.
 
 ## Live verification (2026-10-09)
 
@@ -254,6 +256,57 @@ flags still reject explicitly. Focused extraction/transform tests pass (3 cases,
 presents correctly with the new render pass (380 frames, zero validation errors
 or warnings through shutdown). Live Shape integration follows in milestone 3;
 this intermediate commit does not yet claim a visible Shape.
+
+## Engine Shape live integration (2026-10-10)
+
+`--render vk --vulkan-smoke shape --vk-validation` now renders a real `Shape`
+through `ConvertToVBuffer` / `CreateVertexBuffer`, `PrepareMeshTL`, `BeginMeshTL`,
+`DrawSectionTL` and `EndMeshTL`. The fixture has 8 vertices, 6 quad sections and
+36 triangulated indices; two instances use separate rotating model matrices and
+a translated/oriented engine camera. A combined section range and nonzero index
+offsets are exercised. The farther instance is submitted after the nearer one,
+so overlapping visibility depends on depth testing. Color is an opaque scene
+constant; normals/UVs retain GL33 packing but are not shaded or sampled. This is
+an engine mesh integration check, not normal gameplay or a hardcoded GPU triangle.
+
+Real RTX 4060 Ti verification with Khronos core/synchronization validation:
+
+- Captured and inspected distinct rotating poses at 800x600, 1104x801, 704x501,
+  and after minimize/restore. Geometry, section colors, perspective and depth
+  occlusion were visible. Resize rebuilt depth/framebuffers/pipelines correctly.
+- Released the Shape's vertex-buffer owner while a frame was still recording,
+  then re-uploaded next frame. In-flight references kept allocations alive;
+  output and validation remained clean.
+- The final 22-second timeout run submitted 3,394 / presented 3,391 frames,
+  exited 0, and reported zero validation errors/warnings through destruction.
+  The final normal window-close run submitted 1,216 / presented 1,213 frames,
+  exited 0 and also reported zero validation errors/warnings. Counts differ by
+  three during resize/restore; no backend failure was reported. External stale Epic overlay loader diagnostics
+  remain; implicit layers were disabled only for the test processes.
+- Vulkan and GL33-only builds pass. Focused Shape/factory/smoke/window tests:
+  15 cases in each configuration (ON: 93 assertions; OFF: 90). The new Shape
+  cases contribute 4 cases / 28 assertions. Vulkan's registered CTest passes
+  1/1, with 85 driver-free guards. Root CTest enumeration is blocked by an
+  ungenerated Studio test-list file in this targeted build; broad suites were
+  not rerun.
+- GL33 remains the default. Its initialization check exits 0; default-renderer
+  startup initializes the world and normal closure exits 0. The live menu-window
+  captures were black, including with the preserved pre-task GL33 executable,
+  so visible GL33 menu/gameplay is not claimed by this check. Its renderer code
+  was unchanged. Stock game data/resources metadata snapshots were preserved.
+
+Evidence (ignored): `build/shape-live/lifetime-timeout/{result.json,stdout.log,
+stderr.log,initial.png,rotated.png,wide.png,small.png,restored.png}`;
+normal-close evidence under `build/shape-live/lifetime-close/`; GL33 initialization,
+current launch and pre-task comparison under `build/shape-live/gl33-*`.
+
+Remaining limits: immutable static buffers only; opaque full-viewport untextured
+draws with default depth state and optional `IsColored`/`DisableSun` flags;
+no textures/materials, lights, blending, animation, shadows or UI. Unsupported
+flags/lighting and dirty/dynamic updates fail explicitly. `Shape::Draw` still
+reaches unsupported per-section material/texture preparation. The smallest next
+step is the neutral untextured section-preparation path needed for `Shape::Draw`
+itself to consume these buffers; textured game geometry follows separately.
 
 ## Historical driver-free verification (initial foundation)
 

@@ -15,8 +15,7 @@ VertexBufferVK::VertexBufferVK(vk::VulkanContext& context, const Shape& shape, V
 
 void VertexBufferVK::Update(const Shape&, bool dynamic)
 {
-    if (dynamic || bufferDirty)
-        throw std::logic_error("Vulkan Shape: immutable buffer was modified; dynamic mesh updates are unsupported");
+    vk::RequireImmutableShape(dynamic, bufferDirty);
 }
 
 VertexBuffer* EngineVK::CreateVertexBuffer(const Shape& shape, VBType type)

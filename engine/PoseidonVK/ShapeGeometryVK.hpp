@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Poseidon/Graphics/Rendering/Shape/Shape.hpp>
+#include <Poseidon/Graphics/Rendering/RenderFlags.hpp>
 #include <array>
 #include <cstdint>
 #include <stdexcept>
@@ -8,6 +9,17 @@
 
 namespace Poseidon::vk
 {
+inline bool SupportedShapeSpec(const render::LegacySpec& spec)
+{
+    return spec.backend == render::Backend::None &&
+           (spec.material == render::Material::None || spec.material == render::Material::DisableSun) &&
+           (spec.routing == render::Routing::None || spec.routing == render::Routing::IsColored);
+}
+inline void RequireImmutableShape(bool dynamic, bool dirty)
+{
+    if (dynamic || dirty)
+        throw std::logic_error("Vulkan Shape: immutable buffer was modified; dynamic mesh updates are unsupported");
+}
 // Same position/negated-normal/UV layout and polygon fans as GL33's SVertex path.
 struct ShapeVertex
 {

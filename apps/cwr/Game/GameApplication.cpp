@@ -24,6 +24,7 @@
 #if CWR_HAS_VULKAN
 #include <PoseidonVK/EngineVK.hpp>
 #include <PoseidonVK/SmokeTest.hpp>
+#include "VulkanShapeSmoke.hpp"
 #endif
 #include <Poseidon/Graphics/Rendering/Draw/FontSystem.hpp>
 #include <Poseidon/World/Scene/ScenePreloader.hpp>
@@ -661,6 +662,9 @@ int GameApplication::RunAfterArgumentParsing()
         unsigned frames = 0;
         try
         {
+            std::unique_ptr<VulkanShapeSmoke> shape;
+            if (config.VulkanSmoke() == "shape")
+                shape = std::make_unique<VulkanShapeSmoke>(*engine);
             while (engine->IsOpen() && !m_closeRequest &&
                    (config.AppTimeoutSeconds() <= 0 ||
                     SDL_GetTicks() - started < config.AppTimeoutSeconds() * 1000.0f))
@@ -673,6 +677,8 @@ int GameApplication::RunAfterArgumentParsing()
                 {
                     if (config.VulkanSmoke() == "triangle")
                         engine->DrawTestPattern("triangle");
+                    if (shape)
+                        shape->Draw(float(SDL_GetTicks() - started) * 0.001f);
                     engine->FinishDraw();
                     ++frames;
                 }
