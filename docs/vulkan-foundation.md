@@ -4,7 +4,19 @@ Repository migration: `oksklok/cwr-vulkan` is an independent clone with its own
 `.git` directory and official `BohemiaInteractive/CWR` upstream. Its main starts
 at official 3.05 (`ffc6183`) and replays only the six Vulkan commits from the
 historical branch through `f88f733`; no Chinese localization history is included.
-The old CWR/CWR-RR checkouts and their ignored game/build evidence remain intact.
+The historical Git branches are preserved in a verified local bundle/ZIP. The
+linked CWR-RR worktree has been removed through Git after moving its ignored
+game/build evidence into this independent checkout. Private tools/dependencies
+are under `build/legacy-vulkan/tools/`; preserved old build/client outputs under
+`build/legacy-vulkan/` and `dist/legacy-vulkan/`; stock game data and the isolated
+renderer profile under `game-local/`. Active builds use `build/vulkan-local/`
+and `build/gl33-local/`. No old CWR/CWR-RR folder is required.
+Relocation checks: both configurations rebuilt from relocated tools/dependencies;
+83 driver-free guards and 44 focused cases / 223 assertions passed. The stock
+GL33 initialization check exited 0. The real RTX 4060 Ti indexed-triangle run
+presented 3,548 frames, exited 0, and reported zero validation errors/warnings
+through teardown (implicit layers disabled only for that process). This is a
+diagnostic smoke test, not evidence of Vulkan game-world rendering support.
 Historical runtime results below retain their original context; migration checks
 are reported separately, not substituted for those artifacts.
 
