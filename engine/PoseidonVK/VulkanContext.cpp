@@ -499,6 +499,7 @@ bool VulkanContext::BeginFrame(uint32_t width, uint32_t height)
         return false;
     auto& frame = _frames[_frame];
     Check(vkWaitForFences(_device, 1, &frame.submitted, VK_TRUE, UINT64_MAX), "wait frame fence");
+    frame.meshes.clear();
     // A finite acquire timeout avoids blocking forever if the surface stops progressing.
     const VkResult acquired =
         vkAcquireNextImageKHR(_device, _swapchain, 1000000000ULL, frame.acquired, VK_NULL_HANDLE, &_image);
@@ -601,6 +602,10 @@ unsigned VulkanContext::Shutdown() noexcept
     {
         // Also safe after partial initialization or device loss; shutdown must not throw.
         vkDeviceWaitIdle(_device);
+        for (auto& entry : _meshes)
+            if (auto mesh = entry.lock())
+                mesh->Destroy();
+        _meshes.clear();
         DestroySwapchain();
         // Immutable geometry can be shared by both frame slots; teardown follows device idle.
         DestroyBuffer(_device, _triangleIndices);

@@ -232,9 +232,15 @@ normal close/timeout, frame, validation and logged-error guards (9 assertions).
 No logging subsystem, rendering path or normal window-close behavior was changed;
 no new live run was performed.
 
-The smallest next step is one immutable, untextured `Shape` through the existing
-`CreateVertexBuffer` / `DrawSectionTL` section/index-range seams, using these buffer
-and pipeline primitives. It has not been started.
+Shape milestone 1 (2026-10-10): `CreateVertexBuffer` accepts immutable `VBStatic`
+and `VBBigDiscardable` Shapes. Position/negated-normal/UV packing, polygon fans,
+`VertexIndex` indices and section ranges follow GL33. Dynamic/dirty updates reject
+explicitly. GPU allocations are shared with referencing frame slots and released
+before device destruction even if their Shape survives shutdown. Vulkan and
+GL33-only builds pass; extraction/range rejection tests pass (2 cases, 13
+assertions), as do the existing 83 driver-free guards. Shape drawing is still
+unsupported at this intermediate milestone; GPU upload is built but not yet
+live-exercised.
 
 ## Historical driver-free verification (initial foundation)
 

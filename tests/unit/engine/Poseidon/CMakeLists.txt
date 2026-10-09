@@ -157,6 +157,7 @@ set(POSEIDON_TEST_SOURCES
     Graphics/test_debug_group_audit.cpp
     Graphics/test_spec_bit_backend_boundary.cpp
     Graphics/test_whole_shape_pass_routing.cpp
+    Graphics/test_vulkan_shape.cpp
     Graphics/test_render_conventions_audit.cpp
     Graphics/test_vertex_color_byte_order.cpp
     Graphics/test_ubo_restore_guards.cpp

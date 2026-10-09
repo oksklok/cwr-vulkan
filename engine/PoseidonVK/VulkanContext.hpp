@@ -5,9 +5,19 @@
 #include <array>
 #include <atomic>
 #include <string>
+#include <memory>
 
 namespace Poseidon::vk
 {
+// Shape owners and recorded frames share immutable allocations. Shutdown releases
+// even allocations whose engine-side Shape outlives the Vulkan device.
+struct MeshBuffers
+{
+    VkDevice device = VK_NULL_HANDLE;
+    BufferVK vertices, indices;
+    ~MeshBuffers();
+    void Destroy() noexcept;
+};
 // Backend-private Vulkan ownership. SDL owns the window; this owns its surface.
 // No engine drawing, asset or GL types are involved in device/swapchain lifetime.
 class VulkanContext
@@ -30,6 +40,8 @@ class VulkanContext
     bool BeginFrame(uint32_t width, uint32_t height);
     void Clear(float r, float g, float b, float a);
     void DrawDiagnosticTriangle(); // Explicit DrawTestPattern seam, never an automatic gameplay draw.
+    std::shared_ptr<MeshBuffers> UploadMesh(const void* vertices, size_t vertexBytes, const void* indices,
+                                            size_t indexBytes);
     void EndFrame();
     bool FrameOpen() const { return _frameOpen; }
     VkExtent2D Extent() const { return _extent; }
@@ -42,6 +54,7 @@ class VulkanContext
         VkCommandBuffer command = VK_NULL_HANDLE;
         VkSemaphore acquired = VK_NULL_HANDLE;
         VkFence submitted = VK_NULL_HANDLE;
+        std::vector<std::shared_ptr<MeshBuffers>> meshes;
     };
     static constexpr size_t FramesInFlight = 2;
     VkInstance _instance = VK_NULL_HANDLE;
@@ -53,6 +66,7 @@ class VulkanContext
     VkQueue _present = VK_NULL_HANDLE;
     VkCommandPool _pool = VK_NULL_HANDLE;
     std::array<Frame, FramesInFlight> _frames{};
+    std::vector<std::weak_ptr<MeshBuffers>> _meshes;
     VkSwapchainKHR _swapchain = VK_NULL_HANDLE;
     VkRenderPass _renderPass = VK_NULL_HANDLE;
     std::vector<VkImage> _images;

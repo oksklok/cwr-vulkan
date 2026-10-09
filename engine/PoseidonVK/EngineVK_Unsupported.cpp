@@ -81,10 +81,6 @@ void EngineVK::DrawSectionTL(const Shape&, int, int)
 {
     Unsupported("TL mesh drawing");
 }
-VertexBuffer* EngineVK::CreateVertexBuffer(const Shape&, VBType)
-{
-    Unsupported("vertex buffers");
-}
 void EngineVK::EmitDraw(const render::frame::Draw&)
 {
     Unsupported("indexed draw emission");
