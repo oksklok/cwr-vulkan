@@ -205,6 +205,13 @@ instance creation. Driver-free tests cover the rejection/error message, enabling
 an available requested layer, and unchanged layer-independent operation without
 the flag. CLI help now describes the strict requirement; no new live run was performed.
 
+Muted-logging follow-up: smoke success also requires the backend's stored failure
+flag to be clear, sampled after `StopAll`/terminal shutdown and before destruction.
+Two driver-free verdict tests use real `critical`/`off` logging filters and retain
+normal close/timeout, frame, validation and logged-error guards (9 assertions).
+No logging subsystem, rendering path or normal window-close behavior was changed;
+no new live run was performed.
+
 The smallest next step is one immutable, untextured `Shape` through the existing
 `CreateVertexBuffer` / `DrawSectionTL` section/index-range seams, using these buffer
 and pipeline primitives. It has not been started.

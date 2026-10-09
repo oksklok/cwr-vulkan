@@ -23,6 +23,7 @@
 #include <Poseidon/Graphics/Core/Engine.hpp>
 #if CWR_HAS_VULKAN
 #include <PoseidonVK/EngineVK.hpp>
+#include <PoseidonVK/SmokeTest.hpp>
 #endif
 #include <Poseidon/Graphics/Rendering/Draw/FontSystem.hpp>
 #include <Poseidon/World/Scene/ScenePreloader.hpp>
@@ -689,11 +690,14 @@ int GameApplication::RunAfterArgumentParsing()
         GEngine = nullptr;
         // The explicit vk factory above creates EngineVK. Include destruction-time
         // validation in the verdict while the owning context is still alive.
-        const unsigned errors = static_cast<EngineVK*>(engine.get())->Shutdown();
+        auto* vkEngine = static_cast<EngineVK*>(engine.get());
+        const unsigned errors = vkEngine->Shutdown();
+        const bool failed = vkEngine->HasFailed();
         engine.reset(); // Exercise normal device/window destruction, never ExitProcess.
-        LOG_INFO(Graphics, "Vulkan smoke finished: mode={}, frames={}, final validation errors={}",
-                 config.VulkanSmoke(), frames, errors);
-        return frames && !errors && Poseidon::Foundation::LoggingSystem::GetErrorCount() == initialErrors ? 0 : 1;
+        LOG_INFO(Graphics, "Vulkan smoke finished: mode={}, frames={}, final validation errors={}, backend failed={}",
+                 config.VulkanSmoke(), frames, errors, failed);
+        return vk::SmokeTestExitCode(frames, failed, errors,
+                                     Poseidon::Foundation::LoggingSystem::GetErrorCount() != initialErrors);
 #else
         LOG_ERROR(Graphics, "--vulkan-smoke requires a build with CWR_HAS_VULKAN=ON");
         return 1;

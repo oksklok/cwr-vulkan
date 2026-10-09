@@ -21,6 +21,7 @@ class EngineVK final : public Engine
     RString GetDebugName() const override;
     RString GetRendererName() const override;
     unsigned int GetDebugErrorCount() const override { return _vk.ValidationErrors(); }
+    bool HasFailed() const noexcept { return _failed; }
     void InitDraw(bool clear = false, PackedColor color = PackedColor(0)) override;
     void FinishDraw() override;
     bool InitDrawDone() override { return _vk.FrameOpen(); }

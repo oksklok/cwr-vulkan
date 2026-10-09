@@ -4,6 +4,7 @@
 #include <Poseidon/Core/Application.hpp>
 #include <Poseidon/Foundation/Logging/Logging.hpp>
 #include <Poseidon/Foundation/Framework/Log.hpp>
+#include <PoseidonVK/SmokeTest.hpp>
 #include <spdlog/sinks/callback_sink.h>
 #include <spdlog/common.h>
 #include <spdlog/details/log_msg.h>
@@ -18,7 +19,42 @@
 #include <memory>
 #include <sstream>
 #include <string>
+#include <stdexcept>
 #include <vector>
+
+TEST_CASE("Vulkan smoke rejects caught backend failure with critical or off logging",
+          "[graphics][vulkan][smoke][logging]")
+{
+    for (const char* level : {"critical", "off"})
+    {
+        INFO("log level: " << level);
+        Poseidon::Foundation::LoggingSystem logging;
+        logging.Initialize(level);
+        const int initialErrors = Poseidon::Foundation::LoggingSystem::GetErrorCount();
+        bool backendFailed = false;
+        try
+        {
+            throw std::runtime_error("synthetic submit/present failure");
+        }
+        catch (const std::exception& error)
+        {
+            LOG_ERROR(Graphics, "Vulkan: backend stopped: {}", error.what());
+            backendFailed = true;
+        }
+        const bool loggedErrors = Poseidon::Foundation::LoggingSystem::GetErrorCount() != initialErrors;
+        REQUIRE_FALSE(loggedErrors); // The real logging filter suppresses the counting sink too.
+        CHECK(Poseidon::vk::SmokeTestExitCode(1, backendFailed, 0, loggedErrors) == 1);
+        CHECK(Poseidon::vk::SmokeTestExitCode(1, false, 0, loggedErrors) == 0); // Normal close/timeout still succeeds.
+        logging.Shutdown();
+    }
+}
+
+TEST_CASE("Vulkan smoke verdict retains frame, validation and logged-error guards", "[graphics][vulkan][smoke]")
+{
+    CHECK(Poseidon::vk::SmokeTestExitCode(0, false, 0, false) == 1);
+    CHECK(Poseidon::vk::SmokeTestExitCode(1, false, 1, false) == 1);
+    CHECK(Poseidon::vk::SmokeTestExitCode(1, false, 0, true) == 1);
+}
 
 // Helper: captures spdlog messages via callback sink installed on category loggers
 struct TestLogCapture
