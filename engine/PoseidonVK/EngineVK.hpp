@@ -4,6 +4,7 @@
 #include <Poseidon/Graphics/GraphicsEngineFactory.hpp>
 #include <Poseidon/Graphics/Shared/SDLEventWindow.hpp>
 #include <PoseidonVK/VulkanContext.hpp>
+#include <PoseidonVK/TextureVK.hpp>
 
 namespace Poseidon
 {
@@ -112,6 +113,7 @@ class EngineVK final : public Engine
     SDL_Window* _window = nullptr;
     SDLEventWindow _events;
     vk::VulkanContext _vk;
+    TextBankVK _textures;
     WindowMode _mode = WindowMode::Windowed;
     int _width = 0, _height = 0;
     int _drawableWidth = 0, _drawableHeight = 0;
@@ -122,6 +124,7 @@ class EngineVK final : public Engine
     const Shape* _activeShape = nullptr;
     std::array<float, 16> _shapeMVP{};
     std::array<float, 4> _shapeColor{1, 1, 1, 1};
+    std::array<float, 4> _materialColor{1, 1, 1, 1};
     void StopAfterFailure(const std::exception& error);
     [[noreturn]] static void Unsupported(const char* feature);
 };

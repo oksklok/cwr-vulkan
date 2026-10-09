@@ -357,3 +357,15 @@ file-count/size/timestamp snapshots of `game-local/Remastered`, localization and
 resources were identical. Physical driver behavior was unverified at that stage;
 the live results above supersede that limitation. These broader historical suites
 were not all rerun for the indexed-triangle change.
+
+## Native Shape sections (2026-10-10)
+
+`--render vk --vulkan-smoke shape --vk-validation` now invokes ordinary
+`Shape::Draw`, including `ShapeSection::PrepareTL`, neutral mip preparation and
+basic unlit diffuse material colors. Textured requests remain explicit errors.
+Individual mesh destruction no longer waits for device idle: referencing frames
+retain buffers until their fences signal; terminal device teardown still drains.
+RTX 4060 Ti live captures (`build/shape-live/native-close`) visibly confirmed
+rotation, section colors and depth overlap across resize/minimize/restore.
+Normal window close exited 0, 1134 submissions, zero validation errors/warnings
+through teardown. Focused tests: 12 cases/83 assertions; policy guards: 85.

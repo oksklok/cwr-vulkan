@@ -3,9 +3,27 @@
 #include <PoseidonVK/ShapeTransformVK.hpp>
 #include <Poseidon/World/Scene/Scene.hpp>
 #include <Poseidon/World/Scene/Camera/Camera.hpp>
+#include <Poseidon/Graphics/Core/TLVertex.hpp>
 
 namespace Poseidon
 {
+void EngineVK::SetMaterial(const TLMaterial& mat, const LightList& lights, const render::LegacySpec& spec)
+{
+    if (!_activeShape || !vk::SupportedShapeSpec(spec) || lights.Size() != 0 || mat.specFlags != 0 ||
+        mat.specularPower != 0)
+        Unsupported("Shape material outside basic unlit diffuse");
+    _materialColor = {mat.diffuse.R() + mat.emmisive.R(), mat.diffuse.G() + mat.emmisive.G(),
+                      mat.diffuse.B() + mat.emmisive.B(), mat.diffuse.A()};
+    if (_materialColor[3] != 1)
+        Unsupported("translucent Shape material");
+}
+
+void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& spec)
+{
+    if (!_activeShape || mip._texture || !vk::SupportedShapeSpec(spec))
+        Unsupported("TL section preparation outside untextured opaque geometry");
+}
+
 void EngineVK::PrepareMeshTL(const LightList& lights, const Matrix4& modelToWorld, const render::LegacySpec& spec)
 {
     if (!_vk.FrameOpen() || !GScene || !GScene->GetCamera())
@@ -57,12 +75,14 @@ void EngineVK::DrawSectionTL(const Shape& shape, int begin, int end)
     for (int i = begin; i < end; ++i)
     {
         const auto& section = shape.GetSection(i);
-        if (section.properties.GetTexture() || section.surfMat || section.properties.Special() != 0 ||
-            section.material != 0)
+        if (section.properties.GetTexture() || section.surfMat ||
+            !vk::SupportedShapeSpec(render::SplitLegacy(section.properties.Special())))
             Unsupported("textured/material Shape sections");
     }
-    _vk.DrawMesh(buffer->Buffers(), range.begin, range.end - range.begin, sizeof(VertexIndex) == 2, _shapeMVP,
-                 _shapeColor);
+    auto color = _shapeColor;
+    for (int i = 0; i < 4; ++i)
+        color[i] *= _materialColor[i];
+    _vk.DrawMesh(buffer->Buffers(), range.begin, range.end - range.begin, sizeof(VertexIndex) == 2, _shapeMVP, color);
 }
 
 void EngineVK::EndMeshTL(const Shape& shape)

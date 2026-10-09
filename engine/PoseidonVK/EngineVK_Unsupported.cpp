@@ -13,10 +13,6 @@ void EngineVK::PrepareTriangle(const MipInfo&, int)
 {
     Unsupported("triangle/texture preparation");
 }
-void EngineVK::PrepareTriangleTL(const MipInfo&, const render::LegacySpec&)
-{
-    Unsupported("TL triangle preparation");
-}
 void EngineVK::DrawPolygon(const VertexIndex*, int)
 {
     Unsupported("polygon drawing");
@@ -69,10 +65,6 @@ void EngineVK::EmitDraw(const render::frame::Draw&)
 {
     Unsupported("indexed draw emission");
 }
-void EngineVK::SetMaterial(const TLMaterial&, const LightList&, const render::LegacySpec&)
-{
-    Unsupported("material binding");
-}
 void EngineVK::BeginShadowPass()
 {
     Unsupported("shadow passes");
@@ -88,7 +80,7 @@ void EngineVK::SetShadowMapsEnabled(bool enabled)
 }
 AbstractTextBank* EngineVK::TextBank()
 {
-    Unsupported("texture bank/loading/upload");
+    return &_textures;
 }
 void EngineVK::TextureDestroyed(Texture*)
 {

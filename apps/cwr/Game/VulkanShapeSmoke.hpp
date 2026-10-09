@@ -5,6 +5,7 @@
 #include <Poseidon/Graphics/Rendering/Lighting/Lights.hpp>
 #include <Poseidon/World/Scene/Scene.hpp>
 #include <Poseidon/World/Scene/Camera/Camera.hpp>
+#include <Poseidon/Graphics/Core/TLVertex.hpp>
 
 namespace Poseidon
 {
@@ -31,6 +32,7 @@ class VulkanShapeSmoke
                 face.Set(v, faces[i][v]);
             sections[i].properties.Init();
             sections[i].material = 0;
+            sections[i].material = i < 2 ? 0 : i - 1;
             sections[i].beg = _shape.EndFaces();
             _shape.AddFace(face);
             sections[i].end = _shape.EndFaces();
@@ -85,26 +87,29 @@ class VulkanShapeSmoke
   private:
     void DrawObject(const Matrix4& model, bool back)
     {
-        const Color colors[] = {Color(0.12f, 0.75f, 0.9f, 1), Color(0.12f, 0.75f, 0.9f, 1),
-                                Color(0.22f, 0.35f, 0.9f, 1), Color(1, 0.35f, 0.12f, 1),
-                                Color(1, 0.8f, 0.18f, 1),     Color(0.2f, 0.8f, 0.35f, 1)};
-        render::LegacySpec spec;
-        spec.routing = render::Routing::IsColored;
-        _scene->SetConstantColor(colors[0]);
-        _engine.PrepareMeshTL(_lights, model, spec);
-        _engine.BeginMeshTL(_shape, static_cast<int>(render::MergeLegacy(spec)), false);
-        // Exercise both a combined section range and nonzero first-index draws.
-        _engine.DrawSectionTL(_shape, 0, 2);
-        for (int section = 2; section < _shape.NSections(); ++section)
+        class StaticMaterials final : public IAnimator
         {
-            Color color = colors[section];
-            if (back)
-                color = Color(color.R() * 0.7f, color.G() * 0.7f, color.B() * 0.7f, 1);
-            _scene->SetConstantColor(color);
-            _engine.PrepareMeshTL(_lights, model, spec);
-            _engine.DrawSectionTL(_shape, section, section + 1);
-        }
-        _engine.EndMeshTL(_shape);
+          public:
+            void DoTransform(TLVertexTable&, const Shape&, const Matrix4&, int, int) const override
+            {
+                throw std::logic_error("Shape smoke unexpectedly used software transformation");
+            }
+            void DoLight(TLVertexTable&, const Shape&, const Matrix4&, const LightList&, int, int, int,
+                         int) const override
+            {
+                throw std::logic_error("Shape smoke unexpectedly used software lighting");
+            }
+            bool GetAnimated(const Shape&) const override { return false; }
+            void GetMaterial(TLMaterial& mat, int index) const override
+            {
+                const Color colors[] = {Color(0.12f, 0.75f, 0.9f, 1), Color(0.22f, 0.35f, 0.9f, 1),
+                                        Color(1, 0.35f, 0.12f, 1), Color(1, 0.8f, 0.18f, 1),
+                                        Color(0.2f, 0.8f, 0.35f, 1)};
+                CreateMaterialNormal(mat, colors[index]);
+            }
+        } materials;
+        _scene->SetConstantColor(back ? Color(0.7f, 0.7f, 0.7f, 1) : Color(1, 1, 1, 1));
+        _shape.Draw(&materials, _lights, 0, IsColored, model, model.InverseScaled());
     }
 
     Engine& _engine;

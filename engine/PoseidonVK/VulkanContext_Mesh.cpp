@@ -18,8 +18,7 @@ void Require(VkResult result, const char* operation)
 } // namespace
 MeshBuffers::~MeshBuffers()
 {
-    if (device)
-        vkDeviceWaitIdle(device);
+    // DrawMesh retains buffers in every referencing frame until its fence signals.
     Destroy();
 }
 void MeshBuffers::Destroy() noexcept
