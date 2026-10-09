@@ -1,5 +1,13 @@
 # Vulkan backend development
 
+Repository migration: `oksklok/cwr-vulkan` is an independent clone with its own
+`.git` directory and official `BohemiaInteractive/CWR` upstream. Its main starts
+at official 3.05 (`ffc6183`) and replays only the six Vulkan commits from the
+historical branch through `f88f733`; no Chinese localization history is included.
+The old CWR/CWR-RR checkouts and their ignored game/build evidence remain intact.
+Historical runtime results below retain their original context; migration checks
+are reported separately, not substituted for those artifacts.
+
 `PoseidonVK` is an opt-in SDL3 Vulkan backend registered as `vk`. GL33 remains
 the default and reference game renderer. Clear/present and an opt-in indexed
 triangle diagnostic work; normal game-content rendering remains unsupported.
