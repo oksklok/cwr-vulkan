@@ -95,7 +95,7 @@ class EngineVK final : public Engine
     AbstractTextBank* TextBank() override;
     void TextureDestroyed(Texture*) override;
     void SetGamma(float gamma) override;
-    float GetGamma() const override { return 1.0f; }
+    float GetGamma() const override { return _vk.Gamma(); }
     float ZShadowEpsilon() const override { return 0; }
     float ZRoadEpsilon() const override { return 0; }
     float ObjMipmapCoef() const override { return 1; }

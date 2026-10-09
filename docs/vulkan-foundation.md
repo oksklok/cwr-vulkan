@@ -22,8 +22,9 @@ are reported separately, not substituted for those artifacts.
 
 `PoseidonVK` is an opt-in SDL3 Vulkan backend registered as `vk`. GL33 remains
 the default and reference game renderer. Clear/present, indexed triangle and
-immutable untextured engine Shape drawing work. Normal game startup remains
-blocked by the unfinished texture/material/UI systems.
+native static textured Shape drawing work, including stock P3D models and a
+WRP-derived scenery portion. Normal game startup is not yet verified to reach
+the menu or world; the latest specific blockers are recorded below.
 
 ## Build and selection
 
@@ -419,3 +420,22 @@ reach SDL). Normal close exited 0: 1440 submissions, zero validation errors or
 warnings. Timed 22-second run exited 0: 3321 submissions, zero validation issues
 through teardown. Focused model/adapter/Shape tests: 28 cases/126 assertions.
 These are real models in an integration fixture, not a loaded game world.
+
+## Stock-world scenery portion (2026-10-10)
+
+`--vulkan-smoke world` reads stock `worlds\eden.wrp` with the same `WrpReader`
+used by Landscape's OPRW loader. Four nearby static buildings are selected from
+its 56,740 source objects, retaining original WRP matrices and source IDs
+16952, 16967, 17061 and 17059. Models: `dum_mesto`, `dumruina`, `dum_rasovna`.
+No manually arranged replacements, renderer-specific asset loader, terrain,
+mission simulation or gameplay. This is a scenery-only real-content integration
+route, not success of the normal Landscape draw flow.
+RTX screenshots in `build/shape-live/eden-first` visibly show the stock building
+cluster with original textures/placement and depth. Resize/restore/normal close
+passed; exit 0, 1144 submissions, zero validation errors/warnings through shutdown.
+
+Normal `--render vk --vk-validation` was attempted without smoke. The first
+blocker was configured gamma (now implemented in the fragment shader); the next
+is `EngineVK::Draw2D`, called by `ProgressSystem::Draw` during world initialization.
+The run did not reach a menu/world. The next practical step is minimal textured
+2D primitives for that existing progress/menu flow, not a new UI framework.

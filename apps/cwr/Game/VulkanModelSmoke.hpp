@@ -7,6 +7,7 @@
 #include <Poseidon/World/Model/ModelCache.hpp>
 #include <Poseidon/World/Model/ShapeAdapter.hpp>
 #include <Poseidon/IO/FileServerMT.hpp>
+#include <Poseidon/World/Terrain/WrpReader.hpp>
 #include <SDL3/SDL.h>
 
 namespace Poseidon
@@ -16,7 +17,8 @@ namespace Poseidon
 class VulkanModelSmoke
 {
   public:
-    explicit VulkanModelSmoke(Engine& engine) : _engine(engine), _previousScene(GScene), _previousFiles(GFileServer)
+    explicit VulkanModelSmoke(Engine& engine, bool world = false)
+        : _engine(engine), _previousScene(GScene), _previousFiles(GFileServer)
     {
         GUseFileBanks = true;
         GFileBanks.Load("dta\\", "dta\\", "data", true);
@@ -25,10 +27,15 @@ class VulkanModelSmoke
         GFileServer->Start();
         _scene = std::make_unique<Scene>();
         GScene = _scene.get();
-        Add("data3d\\dum_mesto.p3d", Vector3(2, 0, 5), 0.3f);
-        Add("data3d\\jeep.p3d", Vector3(3, 0, -8), -0.65f);
-        _camera.SetPosition(Vector3(19, 8, -25));
-        _camera.SetOrient(Vector3(-17, -5, 30), VUp);
+        if (world)
+            LoadWorldScenery();
+        else
+        {
+            Add("data3d\\dum_mesto.p3d", Vector3(2, 0, 5), 0.3f);
+            Add("data3d\\jeep.p3d", Vector3(3, 0, -8), -0.65f);
+            _camera.SetPosition(Vector3(19, 8, -25));
+            _camera.SetOrient(Vector3(-17, -5, 30), VUp);
+        }
         LOG_INFO(Graphics, "Model smoke: stock building and Jeep; native Object materials and Shape::Draw. Arrow keys "
                            "move, PageUp/Down elevate, A/D turn.");
     }
@@ -76,6 +83,47 @@ class VulkanModelSmoke
     }
 
   private:
+    void LoadWorldScenery()
+    {
+        WrpReader reader;
+        if (!reader.Load("worlds\\eden.wrp"))
+            throw std::runtime_error(std::string("Stock world load failed: ") + reader.GetError());
+        Vector3 anchor;
+        bool found = false;
+        for (int i = 0; i < reader.GetObjectCount(); ++i)
+        {
+            const auto& source = reader.GetObject(i);
+            const std::string name(source.name);
+            if (name.find("dum_mesto.p3d") != std::string::npos)
+            {
+                anchor = source.position;
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            throw std::runtime_error("Stock Eden world contains no town anchor");
+        for (int i = 0; i < reader.GetObjectCount(); ++i)
+        {
+            const auto& source = reader.GetObject(i);
+            const std::string name(source.name);
+            if (source.position.Distance2(anchor) > 80 * 80 ||
+                (name.find("dum") == std::string::npos && name.find("domek") == std::string::npos &&
+                 name.find("kostel") == std::string::npos && name.find("garaz") == std::string::npos))
+                continue;
+            Add(source.name, source.position, source.heading);
+            if (source.hasMatrix)
+                _objects.back()->SetTransform(source.transform);
+            LOG_INFO(Graphics, "World scenery: Eden WRP object id={} name={} position={},{},{}", source.id, name,
+                     source.position.X(), source.position.Y(), source.position.Z());
+        }
+        _camera.SetPosition(anchor + Vector3(35, 12, -45));
+        _camera.SetOrient(Vector3(-35, -8, 45), VUp);
+        LOG_INFO(Graphics,
+                 "Stock world portion: {} {}, {} source objects, {} nearby buildings; original WRP transforms, no "
+                 "terrain or gameplay",
+                 "worlds\\eden.wrp", reader.GetFormatName(), reader.GetObjectCount(), _objects.size());
+    }
     void Add(const char* name, Vector3 position, float yaw)
     {
         auto model = _models.load(name);

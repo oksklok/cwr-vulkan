@@ -58,7 +58,7 @@ void VulkanContext::CreateShapePipeline(bool translucent)
 {
     if (!_shapeLayout)
     {
-        const VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 84};
+        const VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 88};
         VkPipelineLayoutCreateInfo layout{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         CreateTextureLayout();
         layout.setLayoutCount = 1;
@@ -197,10 +197,11 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     const VkRect2D scissor{{0, 0}, _extent};
     vkCmdSetViewport(frame.command, 0, 1, &viewport);
     vkCmdSetScissor(frame.command, 0, 1, &scissor);
-    std::array<float, 21> constants{};
+    std::array<float, 22> constants{};
     std::copy(mvp.begin(), mvp.end(), constants.begin());
     std::copy(color.begin(), color.end(), constants.begin() + 16);
     constants[20] = alphaCutoff;
+    constants[21] = 1 / _gamma;
     vkCmdPushConstants(frame.command, _shapeLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(constants), constants.data());
     vkCmdDrawIndexed(frame.command, count, 1, firstIndex, 0, 0);

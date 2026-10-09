@@ -1,5 +1,7 @@
 #include <PoseidonVK/EngineVK.hpp>
 #include <stdexcept>
+#include <algorithm>
+#include <cmath>
 
 namespace Poseidon
 {
@@ -86,8 +88,9 @@ AbstractTextBank* EngineVK::TextBank()
 void EngineVK::TextureDestroyed(Texture*) {}
 void EngineVK::SetGamma(float gamma)
 {
-    if (gamma != 1.0f)
-        Unsupported("gamma correction");
+    if (!std::isfinite(gamma))
+        throw std::invalid_argument("Vulkan gamma must be finite");
+    _vk.SetGamma(std::clamp(gamma, 1e-3f, 1e3f));
 }
 void EngineVK::SetBias(int value)
 {

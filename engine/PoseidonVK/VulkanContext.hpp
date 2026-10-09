@@ -68,6 +68,8 @@ class VulkanContext
     VkExtent2D Extent() const { return _extent; }
     const std::string& DeviceName() const { return _deviceName; }
     unsigned ValidationErrors() const { return _validationErrors.load(); }
+    void SetGamma(float gamma) { _gamma = gamma; }
+    float Gamma() const { return _gamma; }
 
   private:
     struct Frame
@@ -133,6 +135,7 @@ class VulkanContext
     VkPipeline _trianglePipeline = VK_NULL_HANDLE;
     std::array<float, 4> _clearColor{0, 0, 0, 1};
     bool _loggedTriangle = false;
+    float _gamma = 1;
     void CreateTrianglePipeline();
 
     static VKAPI_ATTR VkBool32 VKAPI_CALL ValidationMessage(VkDebugUtilsMessageSeverityFlagBitsEXT severity,

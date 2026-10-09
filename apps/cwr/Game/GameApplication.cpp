@@ -647,7 +647,7 @@ int GameApplication::RunAfterArgumentParsing()
             LOG_ERROR(Graphics, "--vulkan-smoke requires explicit --render vk; no fallback is allowed");
             return 1;
         }
-        if (config.VulkanSmoke() == "models" && !ReadConfiguration()) return 1;
+        if ((config.VulkanSmoke() == "models" || config.VulkanSmoke() == "world") && !ReadConfiguration()) return 1;
         RegisterGraphicsBackends();
         const int initialErrors = Poseidon::Foundation::LoggingSystem::GetErrorCount();
         GraphicsEngineParams params;
@@ -666,7 +666,8 @@ int GameApplication::RunAfterArgumentParsing()
         {
             std::unique_ptr<VulkanShapeSmoke> shape;
             std::unique_ptr<VulkanModelSmoke> models;
-            if (config.VulkanSmoke() == "models") models = std::make_unique<VulkanModelSmoke>(*engine);
+            if (config.VulkanSmoke() == "models" || config.VulkanSmoke() == "world")
+                models = std::make_unique<VulkanModelSmoke>(*engine, config.VulkanSmoke() == "world");
             if (config.VulkanSmoke() == "shape" || config.VulkanSmoke() == "texture")
                 shape = std::make_unique<VulkanShapeSmoke>(*engine, config.VulkanSmoke() == "texture");
             while (engine->IsOpen() && !m_closeRequest &&
