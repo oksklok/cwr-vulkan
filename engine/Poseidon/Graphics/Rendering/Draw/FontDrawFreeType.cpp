@@ -46,8 +46,10 @@ static bool IsTextureGpuValid(Texture* tex)
 {
     if (!tex)
         return false;
-    auto* gl = static_cast<class TextureGL33*>(tex);
-    return gl->GetHandle() != 0;
+    auto* gl = dynamic_cast<class TextureGL33*>(tex);
+    // GL hot reload destroys handles. Other banks keep a valid CPU texture and
+    // lazily restore its image in UseMipmap; never interpret those as GL33 objects.
+    return !gl || gl->GetHandle() != 0;
 }
 
 static void SyncAtlasTextures(Engine* engine, Poseidon::ui::FontRenderer* fr)

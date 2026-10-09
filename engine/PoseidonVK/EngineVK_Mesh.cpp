@@ -4,13 +4,20 @@
 #include <Poseidon/World/Scene/Scene.hpp>
 #include <Poseidon/World/Scene/Camera/Camera.hpp>
 #include <Poseidon/Graphics/Core/TLVertex.hpp>
+#include <Poseidon/IO/ParamFile/ParamFile.hpp>
+#include <Poseidon/IO/ParamFileExt.hpp>
 
 namespace Poseidon
 {
+void EngineVK::SetBias(int value)
+{
+    _bias = value;
+    if (_meshPrepared && GScene && GScene->GetCamera())
+        _shapeMVP = vk::ShapeMVP(_shapeModelView, GScene->GetCamera()->ProjectionNormal(), _bias);
+}
 void EngineVK::SetMaterial(const TLMaterial& mat, const LightList& lights, const render::LegacySpec& spec)
 {
-    if (!_activeShape || !vk::SupportedShapeSpec(spec) || lights.Size() != 0 ||
-        !vk::SupportedShapeSpec(render::SplitLegacy(mat.specFlags)))
+    if (!_activeShape || !vk::SupportedShapeSpec(spec) || !vk::SupportedShapeSpec(render::SplitLegacy(mat.specFlags)))
         Unsupported("Shape material outside basic unlit diffuse");
     _materialColor = {mat.diffuse.R() + mat.emmisive.R(), mat.diffuse.G() + mat.emmisive.G(),
                       mat.diffuse.B() + mat.emmisive.B(), mat.diffuse.A()};
@@ -21,8 +28,26 @@ void EngineVK::SetMaterial(const TLMaterial& mat, const LightList& lights, const
 void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& spec)
 {
     if (!_activeShape || !vk::SupportedShapeSpec(spec))
+    {
+        LOG_ERROR(Graphics, "Vulkan TL section unsupported flags: 0x{:x}", render::MergeLegacy(spec));
         Unsupported("TL section preparation outside opaque geometry");
+    }
     _sectionTexture.reset();
+    _sectionDetail.reset();
+    const bool bump = (spec.backend & render::Backend::SpecularTexture) != render::Backend::None;
+    if (bump || (spec.backend & render::Backend::DetailTexture) != render::Backend::None)
+    {
+        const auto texture = _textures.Load(Remaster >> "CfgDetailTextures" >> (bump ? "specular" : "detail"));
+        if (!texture)
+            throw std::runtime_error("Vulkan terrain secondary texture is missing");
+        _sectionDetail = static_cast<TextureVK*>(texture.GetRef())->Image(_vk);
+        _secondaryMode = bump ? 2 : 1;
+        if (bump && GScene->MainLight())
+        {
+            const auto direction = GScene->MainLight()->SunDirection();
+            _bumpLight = {direction.X(), direction.Y(), direction.Z()};
+        }
+    }
     _sectionSampler = vk::ShapeSampler(spec);
     _sectionAlphaCutoff = 0;
     _sectionBlend = _materialColor[3] < 1 || _shapeColor[3] < 1;
@@ -39,27 +64,27 @@ void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& s
 
 void EngineVK::PrepareMeshTL(const LightList& lights, const Matrix4& modelToWorld, const render::LegacySpec& spec)
 {
-    if (!_vk.FrameOpen() || !GScene || !GScene->GetCamera())
-        throw std::logic_error("Vulkan Shape: mesh preparation needs an open frame and scene camera");
-    // This stage is strictly opaque, untextured, unlit geometry. Do not accept
-    // blend/shadow/depth overrides or animated materials as successful draws.
+    if (!GScene || !GScene->GetCamera())
+        throw std::logic_error("Vulkan Shape: mesh preparation needs a scene camera");
+    // Deliberately unlit diffuse/emissive approximation. Engine light lists may
+    // be supplied, but no per-light or specular material system is evaluated.
     if (!vk::SupportedShapeSpec(spec))
+    {
+        LOG_ERROR(Graphics, "Vulkan TL mesh unsupported flags: 0x{:x}", render::MergeLegacy(spec));
         Unsupported("Shape render flags outside opaque untextured/IsColored");
-    if (lights.Size() != 0)
-        Unsupported("Shape lighting");
+    }
     const auto* camera = GScene->GetCamera();
     Matrix4 relative = modelToWorld;
     relative.SetPosition(modelToWorld.Position() - camera->Position());
     Matrix4 view = camera->InverseScaled();
     view.SetPosition(VZero);
-    _shapeMVP = vk::ShapeMVP(view * relative, camera->ProjectionNormal());
+    _shapeModelView = view * relative;
+    _shapeMVP = vk::ShapeMVP(_shapeModelView, camera->ProjectionNormal(), _bias);
     _shapeColor = {1, 1, 1, 1};
     if ((spec.routing & render::Routing::IsColored) != render::Routing::None)
     {
         const auto color = GScene->GetConstantColor();
-        if (color.A() != 1)
-            Unsupported("translucent Shape color");
-        _shapeColor = {color.R(), color.G(), color.B(), 1};
+        _shapeColor = {color.R(), color.G(), color.B(), color.A()};
     }
     _meshPrepared = true;
 }
@@ -94,8 +119,11 @@ void EngineVK::DrawSectionTL(const Shape& shape, int begin, int end)
     auto color = _shapeColor;
     for (int i = 0; i < 4; ++i)
         color[i] *= _materialColor[i];
+    if (!_vk.FrameOpen())
+        return; // Minimized drawable: no acquired image, but unsupported states above still fail.
     _vk.DrawMesh(buffer->Buffers(), range.begin, range.end - range.begin, sizeof(VertexIndex) == 2, _shapeMVP, color,
-                 _sectionTexture, _sectionSampler, _sectionAlphaCutoff, _sectionBlend);
+                 _sectionTexture, _sectionSampler, _sectionAlphaCutoff, _sectionBlend, false, true, nullptr,
+                 _sectionDetail, _secondaryMode, _bumpLight);
 }
 
 void EngineVK::EndMeshTL(const Shape& shape)

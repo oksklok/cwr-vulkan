@@ -324,6 +324,11 @@ void VulkanContext::CreateFrameResources()
 
 void VulkanContext::DestroySwapchain() noexcept
 {
+    for (auto& pipeline : _screenPipelines)
+    {
+        if (pipeline) vkDestroyPipeline(_device, pipeline, nullptr);
+        pipeline = VK_NULL_HANDLE;
+    }
     if (_blendPipeline) vkDestroyPipeline(_device, _blendPipeline, nullptr);
     _blendPipeline = VK_NULL_HANDLE;
     if (_shapePipeline)
@@ -684,6 +689,11 @@ unsigned VulkanContext::Shutdown() noexcept
         _shapeLayout = VK_NULL_HANDLE;
         if (_textureLayout) vkDestroyDescriptorSetLayout(_device, _textureLayout, nullptr);
         _textureLayout = VK_NULL_HANDLE;
+        for (auto& sampler : _textureSamplers)
+        {
+            if (sampler) vkDestroySampler(_device, sampler, nullptr);
+            sampler = VK_NULL_HANDLE;
+        }
         for (auto& frame : _frames)
         {
             if (frame.acquired)

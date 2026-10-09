@@ -6,11 +6,11 @@ namespace Poseidon::vk
 {
 // ConvertMatrix's row storage is column-major GLSL storage. Poseidon already
 // projects to Vulkan's 0..1 depth range; only the framebuffer Y axis is flipped.
-inline std::array<float, 16> ShapeMVP(Matrix4Val modelToView, Matrix4Val projection)
+inline std::array<float, 16> ShapeMVP(Matrix4Val modelToView, Matrix4Val projection, int bias = 0)
 {
     GfxMatrix model{}, proj{};
     ConvertMatrix(model, modelToView);
-    ConvertProjectionMatrix(proj, projection, 0);
+    ConvertProjectionMatrix(proj, projection, bias);
     std::array<float, 16> result{};
     const auto* m = &model._11;
     const auto* p = &proj._11;

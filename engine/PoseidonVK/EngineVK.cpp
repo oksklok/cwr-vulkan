@@ -84,6 +84,9 @@ unsigned EngineVK::Shutdown() noexcept
 {
     _activeShape = nullptr;
     _meshPrepared = false;
+    _softwareMesh = nullptr;
+    _softwareVertices.clear();
+    _softwareMip = MipInfo();
     _events.Detach();
     const unsigned errors = _vk.Shutdown(); // Device/swapchain and surface must die before the SDL window.
     if (_window)

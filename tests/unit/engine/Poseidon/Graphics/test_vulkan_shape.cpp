@@ -1,9 +1,37 @@
 #include <catch2/catch_test_macros.hpp>
 #include <PoseidonVK/ShapeGeometryVK.hpp>
 #include <PoseidonVK/ShapeTransformVK.hpp>
+#include <PoseidonVK/ScreenGeometryVK.hpp>
 #include <catch2/catch_approx.hpp>
 
 using namespace Poseidon;
+
+TEST_CASE("Vulkan screen packing preserves pixels UV depth reciprocal W and ARGB", "[Graphics][vulkan-shape]")
+{
+    Vertex2DAbs vertex;
+    vertex.x = 600;
+    vertex.y = 150;
+    vertex.z = 0.75f;
+    vertex.w = 0.5f;
+    vertex.u = 0.2f;
+    vertex.v = 0.8f;
+    vertex.color = PackedColor(0x80402010);
+    const auto packed = vk::ScreenGeometry(vertex, 800, 600);
+    REQUIRE(packed.position[0] == Catch::Approx(1));
+    REQUIRE(packed.position[1] == Catch::Approx(-1));
+    REQUIRE(packed.position[2] == Catch::Approx(1.5));
+    REQUIRE(packed.position[3] == Catch::Approx(2));
+    REQUIRE(packed.uv[0] == Catch::Approx(0.2));
+    REQUIRE(packed.uv[1] == Catch::Approx(0.8));
+    REQUIRE(packed.color[0] == Catch::Approx(64.f / 255));
+    REQUIRE(packed.color[1] == Catch::Approx(32.f / 255));
+    REQUIRE(packed.color[2] == Catch::Approx(16.f / 255));
+    REQUIRE(packed.color[3] == Catch::Approx(128.f / 255));
+    vertex.w = 0;
+    REQUIRE_THROWS_AS(vk::ScreenGeometry(vertex, 800, 600), std::invalid_argument);
+    vertex.w = 1;
+    REQUIRE_THROWS_AS(vk::ScreenGeometry(vertex, 0, 600), std::invalid_argument);
+}
 
 TEST_CASE("Vulkan Shape extraction preserves polygon fans and section ranges", "[Graphics][vulkan-shape]")
 {
@@ -108,7 +136,7 @@ TEST_CASE("Vulkan Shape accepts opaque color but rejects unfinished render state
     REQUIRE(vk::ShapeSampler(spec) == 4);
     spec.backend = render::Backend::None;
     spec.material = render::Material::IsAnimated;
-    REQUIRE_FALSE(vk::SupportedShapeSpec(spec));
+    REQUIRE(vk::SupportedShapeSpec(spec));
     spec.material = render::Material::None;
     spec.routing = render::Routing::OnSurface;
     REQUIRE_FALSE(vk::SupportedShapeSpec(spec));

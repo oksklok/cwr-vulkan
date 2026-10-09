@@ -20,6 +20,14 @@ void VertexBufferVK::Update(const Shape&, bool dynamic)
 
 VertexBuffer* EngineVK::CreateVertexBuffer(const Shape& shape, VBType type)
 {
+    if (type != VBStatic && type != VBBigDiscardable)
+    {
+        LOG_DEBUG(Graphics,
+                  "Vulkan: declining dynamic/discardable vertex buffer type {} ({} vertices); use engine software "
+                  "transformation",
+                  int(type), shape.NVertex());
+        return nullptr; // Engine contract: unavailable hardware buffer, not a successful draw.
+    }
     return new VertexBufferVK(_vk, shape, type);
 }
 } // namespace Poseidon

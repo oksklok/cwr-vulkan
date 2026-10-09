@@ -23,8 +23,9 @@ are reported separately, not substituted for those artifacts.
 `PoseidonVK` is an opt-in SDL3 Vulkan backend registered as `vk`. GL33 remains
 the default and reference game renderer. Clear/present, indexed triangle and
 native static textured Shape drawing work, including stock P3D models and a
-WRP-derived scenery portion. Normal game startup is not yet verified to reach
-the menu or world; the latest specific blockers are recorded below.
+WRP-derived scenery portion. Normal `--render vk` startup now visibly reaches
+the menu over the stock intro world. Rendering remains experimental and unlit;
+this is not a claim of playable missions. Latest verification is recorded below.
 
 ## Build and selection
 
@@ -439,3 +440,41 @@ blocker was configured gamma (now implemented in the fragment shader); the next
 is `EngineVK::Draw2D`, called by `ProgressSystem::Draw` during world initialization.
 The run did not reach a menu/world. The next practical step is minimal textured
 2D primitives for that existing progress/menu flow, not a new UI framework.
+
+## Normal menu and intro world (2026-10-10)
+
+The earlier startup blockers above are superseded. `Draw2D`, pixel/absolute
+polygons and GL33-style textured 2D lines now share the existing Vulkan upload,
+descriptor, frame-fence and shader path. Reciprocal-W, vertex ARGB, UVs, clipping,
+alpha blending and depth are retained. Existing FreeType atlas creation/update
+uses RGBA textures; the engine's GL-only atlas validity cast was corrected.
+No font system was replaced. Texture interpolation uses decoded engine pixels,
+keeps one cached result per source pair, and retires changed images at frame
+fences. Missing stock references return null with a warning, matching GL33.
+Eight sampling states are shared device-wide: stock preloading exposed and fixed
+the original per-image sampler allocation-limit violation.
+
+Software `FaceArray` submission now consumes the engine's already transformed,
+lit and clipped TL vertices. Dynamic vertex-buffer requests decline hardware
+storage and use this existing engine route; immutable GPU Shapes remain native.
+Unused clipped vertices are not converted. Sky and animated texture frames use
+the original scene/texture animation systems. Terrain detail uses GL33's 32x UV
+and alpha modulation; stock water's specular texture uses its decoded bump sample
+and sun direction. Depth bias reuses `ZBiasMath`/projection conversion. Native
+materials are intentionally unlit diffuse/emissive, not full light-list rendering.
+Vulkan explicitly advertises no projected-shadow support; Scene does not request
+that optional pass. Unsupported shadow commands still fail, and GL33's capability
+defaults to true. Other unsupported effects remain errors, not successful no-ops.
+
+Normal startup without **any** smoke flag was captured and inspected on the RTX
+4060 Ti in `build/shape-live/normal-restore`: recognizable stock intro vehicles,
+terrain, original logo, menu labels and UI lines. Wide/small resize and
+minimize/restore passed after fixing no-acquired-frame mesh handling. Normal
+window close exited 0, 84 submissions/82 presentations, zero Khronos core or
+synchronization validation errors/warnings through shutdown. Focused decoder,
+Shape/screen, model/adapter and WRP tests: 55 passed, one archived external-data
+case skipped, 4355 assertions passed; driver-free policy/lifetime guards: 85.
+
+Limitations: original top mip only, no streaming/eviction, native lighting/fog
+approximation, no projected/shadow-map effects, decals or 3D line/point effects.
+Normal menu/intro rendering is demonstrated; mission gameplay is not yet tested.

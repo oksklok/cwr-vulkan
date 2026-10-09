@@ -1725,7 +1725,7 @@ void Scene::DrawObjectsAndShadowsPass2()
         // Projected accumulator shadows — the fallback path.  When shadow maps are
         // on, the lit shaders darken receivers from the depth map instead, so skip
         // this to avoid two overlapping shadows.
-        if (!GEngine->ShadowMapsEnabled())
+        if (!GEngine->ShadowMapsEnabled() && GEngine->SupportsProjectedShadows())
         {
             // Frozen-pose caster accounting for the projected-shadow cache: Object::PrepareShadow
             // bumps gShadowFrozenRouted each time a settled corpse / stopped vehicle is served from

@@ -27,7 +27,6 @@ struct TextureImage
     VkImage image = VK_NULL_HANDLE;
     VkDeviceMemory memory = VK_NULL_HANDLE;
     VkImageView view = VK_NULL_HANDLE;
-    std::array<VkSampler, 8> samplers{};
     VkDescriptorPool pool = VK_NULL_HANDLE;
     std::array<VkDescriptorSet, 8> descriptors{};
     ~TextureImage();
@@ -62,7 +61,9 @@ class VulkanContext
     void DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t firstIndex, uint32_t count, bool index16,
                   const std::array<float, 16>& mvp, const std::array<float, 4>& color,
                   const std::shared_ptr<TextureImage>& texture = {}, unsigned sampler = 0, float alphaCutoff = 0,
-                  bool blend = false);
+                  bool blend = false, bool screen = false, bool depthTest = true, const VkRect2D* clip = nullptr,
+                  const std::shared_ptr<TextureImage>& detail = {}, float secondaryMode = 1,
+                  const std::array<float, 3>& lightDirection = {0, -1, 0});
     void EndFrame();
     bool FrameOpen() const { return _frameOpen; }
     VkExtent2D Extent() const { return _extent; }
@@ -94,6 +95,7 @@ class VulkanContext
     std::vector<std::weak_ptr<TextureImage>> _textures;
     std::shared_ptr<TextureImage> _whiteTexture;
     VkDescriptorSetLayout _textureLayout = VK_NULL_HANDLE;
+    std::array<VkSampler, 8> _textureSamplers{};
     void CreateTextureLayout();
     VkSwapchainKHR _swapchain = VK_NULL_HANDLE;
     VkRenderPass _renderPass = VK_NULL_HANDLE;
@@ -108,8 +110,9 @@ class VulkanContext
     VkPipelineLayout _shapeLayout = VK_NULL_HANDLE;
     VkPipeline _shapePipeline = VK_NULL_HANDLE;
     VkPipeline _blendPipeline = VK_NULL_HANDLE;
+    std::array<VkPipeline, 3> _screenPipelines{};
     bool _loggedShape = false;
-    void CreateShapePipeline(bool blend = false);
+    void CreateShapePipeline(bool blend = false, bool screen = false, bool depthTest = true);
     void CreateDepthAttachment(DepthAttachment& depth);
     std::vector<VkImage> _images;
     std::vector<VkImageView> _views;

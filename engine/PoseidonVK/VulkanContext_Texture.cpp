@@ -23,9 +23,6 @@ void TextureImage::Destroy() noexcept
     {
         if (pool)
             vkDestroyDescriptorPool(device, pool, nullptr);
-        for (auto sampler : samplers)
-            if (sampler)
-                vkDestroySampler(device, sampler, nullptr);
         if (view)
             vkDestroyImageView(device, view, nullptr);
         if (image)
@@ -45,6 +42,17 @@ void VulkanContext::CreateTextureLayout()
     info.bindingCount = 1;
     info.pBindings = &binding;
     Require(vkCreateDescriptorSetLayout(_device, &info, nullptr, &_textureLayout), "create descriptor layout");
+    // Sampling states are device-wide, not eight sampler objects per asset.
+    for (unsigned i = 0; i < 8; ++i)
+    {
+        VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+        sampler.magFilter = sampler.minFilter = (i & 4) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+        sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        sampler.addressModeU = (i & 1) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        sampler.addressModeV = (i & 2) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        Require(vkCreateSampler(_device, &sampler, nullptr, &_textureSamplers[i]), "create shared sampler");
+    }
 }
 std::shared_ptr<TextureImage> VulkanContext::UploadTexture(uint32_t width, uint32_t height, const void* rgba)
 {
@@ -140,15 +148,8 @@ std::shared_ptr<TextureImage> VulkanContext::UploadTexture(uint32_t width, uint3
         set.pSetLayouts = &_textureLayout;
         for (unsigned i = 0; i < 8; ++i)
         {
-            VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-            sampler.magFilter = sampler.minFilter = (i & 4) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
-            sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-            sampler.addressModeU = (i & 1) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
-            sampler.addressModeV = (i & 2) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
-            sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-            Require(vkCreateSampler(_device, &sampler, nullptr, &texture->samplers[i]), "create sampler");
             Require(vkAllocateDescriptorSets(_device, &set, &texture->descriptors[i]), "allocate texture descriptor");
-            const VkDescriptorImageInfo imageInfo{texture->samplers[i], texture->view,
+            const VkDescriptorImageInfo imageInfo{_textureSamplers[i], texture->view,
                                                   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
             VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
             write.dstSet = texture->descriptors[i];

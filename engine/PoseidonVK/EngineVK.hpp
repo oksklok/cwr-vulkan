@@ -5,10 +5,12 @@
 #include <Poseidon/Graphics/Shared/SDLEventWindow.hpp>
 #include <PoseidonVK/VulkanContext.hpp>
 #include <PoseidonVK/TextureVK.hpp>
+#include <PoseidonVK/ScreenGeometryVK.hpp>
+#include <Poseidon/Graphics/Core/ZBiasMath.hpp>
 
 namespace Poseidon
 {
-// Opt-in clear/present and immutable untextured Shape rendering.
+// Opt-in experimental diffuse Shape, software TL and textured 2D rendering.
 // Inherits Engine directly: Dummy's successful no-op draw paths are not used.
 class EngineVK final : public Engine
 {
@@ -63,7 +65,7 @@ class EngineVK final : public Engine
     bool IsResizable() const override { return IsWindowed(); }
     int AFrameTime() const override { return static_cast<int>(GetLastFrameDuration()); }
 
-    // All unsupported resource/emission entry points live in EngineVK_Unsupported.cpp.
+    // Unsupported resource/emission entry points fail in EngineVK_Unsupported.cpp.
     using Engine::Draw2D;
     using Engine::DrawLine;
     void PrepareTriangle(const MipInfo&, int) override;
@@ -91,6 +93,7 @@ class EngineVK final : public Engine
     void SetMaterial(const TLMaterial&, const LightList&, const render::LegacySpec&) override;
     void BeginShadowPass() override;
     void EndShadowPass() override;
+    bool SupportsProjectedShadows() const override { return false; }
     void SetShadowMapsEnabled(bool enabled) override;
     AbstractTextBank* TextBank() override;
     void TextureDestroyed(Texture*) override;
@@ -101,10 +104,11 @@ class EngineVK final : public Engine
     float ObjMipmapCoef() const override { return 1; }
     void GetZCoefs(float& add, float& mult) override
     {
-        add = 0;
-        mult = 1;
+        const auto coefs = render::zbias::SoftwareCoefs(_bias);
+        add = coefs.zAdd;
+        mult = coefs.zMult;
     }
-    int GetBias() override { return 0; }
+    int GetBias() override { return _bias; }
     void SetBias(int value) override;
     bool CanZBias() const override { return false; }
     bool ZBiasExclusion() const override { return false; }
@@ -121,14 +125,24 @@ class EngineVK final : public Engine
     bool _paused = false;
     bool _failed = false;
     bool _meshPrepared = false;
+    int _bias = 0;
+    Matrix4 _shapeModelView;
     const Shape* _activeShape = nullptr;
     std::array<float, 16> _shapeMVP{};
     std::array<float, 4> _shapeColor{1, 1, 1, 1};
     std::array<float, 4> _materialColor{1, 1, 1, 1};
     std::shared_ptr<vk::TextureImage> _sectionTexture;
+    std::shared_ptr<vk::TextureImage> _sectionDetail;
+    float _secondaryMode = 1;
+    std::array<float, 3> _bumpLight{0, -1, 0};
     unsigned _sectionSampler = 0;
     float _sectionAlphaCutoff = 0;
     bool _sectionBlend = false;
+    TLVertexTable* _softwareMesh = nullptr;
+    MipInfo _softwareMip;
+    int _softwareFlags = 0;
+    std::vector<vk::ScreenVertex> _softwareVertices;
+    void SubmitSoftware(const std::vector<uint32_t>& indices);
     void StopAfterFailure(const std::exception& error);
     [[noreturn]] static void Unsupported(const char* feature);
 };

@@ -12,8 +12,11 @@ namespace Poseidon::vk
 inline bool SupportedShapeSpec(const render::LegacySpec& spec)
 {
     const auto backend = render::Backend::IsAlpha | render::Backend::IsTransparent | render::Backend::PointSampling |
-                         render::Backend::NoClamp | render::Backend::ClampU | render::Backend::ClampV;
-    const auto material = render::Material::DisableSun | render::Material::BestMipmap;
+                         render::Backend::NoClamp | render::Backend::ClampU | render::Backend::ClampV |
+                         render::Backend::DetailTexture | render::Backend::SpecularTexture |
+                         render::Backend::ZBiasStep | render::Backend::ZBiasMaskHi;
+    // IsAnimated denotes engine-selected texture frames, not dynamic vertices.
+    const auto material = render::Material::DisableSun | render::Material::BestMipmap | render::Material::IsAnimated;
     const auto routing = render::Routing::IsColored | render::Routing::IsAlphaOrdered | render::Routing::NoShadow |
                          render::Routing::ShadowDisabled | render::Routing::FogDisabled | render::Routing::NoDropdown;
     return (spec.backend & ~backend) == render::Backend::None &&

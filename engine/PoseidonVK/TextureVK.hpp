@@ -10,6 +10,10 @@ class TextureVK final : public Texture
 {
   public:
     explicit TextureVK(RStringB name);
+    TextureVK(RStringB name, int width, int height, const void* rgba, uint32_t size);
+    void UpdateRGBA(const void* rgba, uint32_t size);
+    const DecodedImage& Pixels() const { return _pixels; }
+    bool IsDynamic() const { return _dynamic; }
     int AWidth(int level = 0) const override;
     int AHeight(int level = 0) const override;
     int ANMipmaps() const override { return 1; }
@@ -28,6 +32,8 @@ class TextureVK final : public Texture
     void ReleaseImage() { _image.reset(); }
 
   private:
+    void RefreshMetadata();
+    bool _dynamic = false;
     DecodedImage _pixels;
     PacLevelMem _level;
     AlphaStats::Kind _alpha = AlphaStats::Opaque;
@@ -40,10 +46,9 @@ class TextBankVK final : public AbstractTextBank
     explicit TextBankVK(vk::VulkanContext& context) : _context(context) {}
     ~TextBankVK() override;
     Ref<Texture> Load(RStringB name) override;
-    Ref<Texture> LoadInterpolated(RStringB, RStringB, float) override
-    {
-        throw std::logic_error("Vulkan interpolated textures are unsupported");
-    }
+    Ref<Texture> LoadInterpolated(RStringB first, RStringB second, float factor) override;
+    Texture* CreateDynamic(int width, int height, const void* rgba, uint32_t size, bool mipmap = false) override;
+    void UpdateDynamic(Texture* texture, const void* rgba, uint32_t size) override;
     int NTextures() const override { return static_cast<int>(_cache.size()); }
     Texture* GetTexture(int i) const override;
     MipInfo UseMipmap(Texture* texture, int, int) override;
@@ -56,5 +61,7 @@ class TextBankVK final : public AbstractTextBank
   private:
     vk::VulkanContext& _context;
     std::map<std::string, Ref<TextureVK>> _cache;
+    unsigned _dynamicSerial = 0;
+    std::map<std::string, float> _interpolationFactors;
 };
 } // namespace Poseidon

@@ -4,8 +4,11 @@ if(NOT Vulkan_GLSLANG_VALIDATOR_EXECUTABLE)
     message(FATAL_ERROR "Vulkan shaders require glslangValidator from the installed Vulkan SDK")
 endif()
 set(VK_SHADER_HEADERS)
-foreach(kind triangle shape)
+foreach(kind triangle shape screen)
     foreach(stage vert frag)
+        if(kind STREQUAL "screen" AND stage STREQUAL "frag")
+            continue() # Screen vertices reuse the diffuse fragment shader.
+        endif()
         set(header "${CMAKE_CURRENT_BINARY_DIR}/generated/PoseidonVK/Shaders/${kind}.${stage}.hpp")
         add_custom_command(OUTPUT "${header}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated/PoseidonVK/Shaders"
@@ -18,7 +21,7 @@ endforeach()
 add_custom_target(PoseidonVKShaders DEPENDS ${VK_SHADER_HEADERS})
 
 add_library(PoseidonVK STATIC VulkanContext.cpp VulkanContext_Triangle.cpp VulkanContext_Mesh.cpp VulkanContext_Texture.cpp TextureVK.cpp BufferVK.cpp VertexBufferVK.cpp
-    EngineVK.cpp EngineVK_Mesh.cpp EngineVK_Unsupported.cpp GraphicsBackendVK.cpp)
+    EngineVK.cpp EngineVK_Mesh.cpp EngineVK_2D.cpp EngineVK_Software.cpp EngineVK_Unsupported.cpp GraphicsBackendVK.cpp)
 add_dependencies(PoseidonVK PoseidonVKShaders)
 target_include_directories(PoseidonVK PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(PoseidonVK PUBLIC Poseidon Vulkan::Vulkan)

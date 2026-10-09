@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <PoseidonVK/Shaders/shape.vert.hpp>
 #include <PoseidonVK/Shaders/shape.frag.hpp>
+#include <PoseidonVK/Shaders/screen.vert.hpp>
 #include <cstdio>
 
 namespace Poseidon::vk
@@ -54,15 +55,16 @@ std::shared_ptr<MeshBuffers> VulkanContext::UploadMesh(const void* vertices, siz
     return mesh;
 }
 
-void VulkanContext::CreateShapePipeline(bool translucent)
+void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool depthTest)
 {
     if (!_shapeLayout)
     {
-        const VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 88};
+        const VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 112};
         VkPipelineLayoutCreateInfo layout{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         CreateTextureLayout();
-        layout.setLayoutCount = 1;
-        layout.pSetLayouts = &_textureLayout;
+        const VkDescriptorSetLayout sets[] = {_textureLayout, _textureLayout};
+        layout.setLayoutCount = 2;
+        layout.pSetLayouts = sets;
         layout.pushConstantRangeCount = 1;
         layout.pPushConstantRanges = &push;
         Require(vkCreatePipelineLayout(_device, &layout, nullptr, &_shapeLayout), "create pipeline layout");
@@ -71,8 +73,8 @@ void VulkanContext::CreateShapePipeline(bool translucent)
     try
     {
         VkShaderModuleCreateInfo shader{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-        shader.codeSize = sizeof(Cwrshape_vert);
-        shader.pCode = Cwrshape_vert;
+        shader.codeSize = screen ? sizeof(Cwrscreen_vert) : sizeof(Cwrshape_vert);
+        shader.pCode = screen ? Cwrscreen_vert : Cwrshape_vert;
         Require(vkCreateShaderModule(_device, &shader, nullptr, &vertex), "create vertex shader");
         shader.codeSize = sizeof(Cwrshape_frag);
         shader.pCode = Cwrshape_frag;
@@ -84,16 +86,21 @@ void VulkanContext::CreateShapePipeline(bool translucent)
         stages[0].module = vertex;
         stages[1].module = fragment;
         stages[0].pName = stages[1].pName = "main";
-        // GL33 SVertex-compatible position/normal/UV packing; only position is
-        // consumed by this deliberately unlit, untextured shader.
+        // GL33 SVertex-compatible position/normal/UV packing. The unlit
+        // Shape shader consumes position and UV; 2D also carries vertex color.
         const VkVertexInputBindingDescription binding{0, 8 * sizeof(float), VK_VERTEX_INPUT_RATE_VERTEX};
         const VkVertexInputAttributeDescription attributes[] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
                                                                 {1, 0, VK_FORMAT_R32G32_SFLOAT, 6 * sizeof(float)}};
+        const VkVertexInputBindingDescription screenBinding{0, 10 * sizeof(float), VK_VERTEX_INPUT_RATE_VERTEX};
+        const VkVertexInputAttributeDescription screenAttributes[] = {
+            {0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0},
+            {1, 0, VK_FORMAT_R32G32_SFLOAT, 4 * sizeof(float)},
+            {2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 6 * sizeof(float)}};
         VkPipelineVertexInputStateCreateInfo input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         input.vertexBindingDescriptionCount = 1;
-        input.pVertexBindingDescriptions = &binding;
-        input.vertexAttributeDescriptionCount = 2;
-        input.pVertexAttributeDescriptions = attributes;
+        input.pVertexBindingDescriptions = screen ? &screenBinding : &binding;
+        input.vertexAttributeDescriptionCount = screen ? 3 : 2;
+        input.pVertexAttributeDescriptions = screen ? screenAttributes : attributes;
         VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
         assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         VkPipelineViewportStateCreateInfo viewport{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
@@ -106,7 +113,7 @@ void VulkanContext::CreateShapePipeline(bool translucent)
         VkPipelineMultisampleStateCreateInfo samples{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
         samples.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
         VkPipelineDepthStencilStateCreateInfo depth{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-        depth.depthTestEnable = depth.depthWriteEnable = VK_TRUE;
+        depth.depthTestEnable = depth.depthWriteEnable = depthTest;
         if (translucent)
             depth.depthWriteEnable = VK_FALSE;
         depth.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
@@ -140,7 +147,9 @@ void VulkanContext::CreateShapePipeline(bool translucent)
         pipeline.layout = _shapeLayout;
         pipeline.renderPass = _renderPass;
         Require(vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &pipeline, nullptr,
-                                          translucent ? &_blendPipeline : &_shapePipeline),
+                                          screen        ? &_screenPipelines[depthTest ? (translucent ? 2 : 1) : 0]
+                                          : translucent ? &_blendPipeline
+                                                        : &_shapePipeline),
                 "create graphics pipeline");
     }
     catch (...)
@@ -153,14 +162,16 @@ void VulkanContext::CreateShapePipeline(bool translucent)
     }
     vkDestroyShaderModule(_device, fragment, nullptr);
     vkDestroyShaderModule(_device, vertex, nullptr);
-    std::fprintf(stderr, "Vulkan: Shape pipeline ready for swapchain #%u (opaque, depth tested)\n",
-                 _swapchainGeneration);
+    std::fprintf(stderr, "Vulkan: %s pipeline ready for swapchain #%u (%s, depth %s)\n", screen ? "2D" : "Shape",
+                 _swapchainGeneration, translucent ? "alpha blend" : "opaque", depthTest ? "tested" : "disabled");
 }
 
 void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t firstIndex, uint32_t count,
                              bool index16, const std::array<float, 16>& mvp, const std::array<float, 4>& color,
                              const std::shared_ptr<TextureImage>& texture, unsigned sampler, float alphaCutoff,
-                             bool blend)
+                             bool blend, bool screen, bool depthTest, const VkRect2D* clip,
+                             const std::shared_ptr<TextureImage>& detail, float secondaryMode,
+                             const std::array<float, 3>& lightDirection)
 {
     if (!_frameOpen || !mesh || mesh->device != _device || !mesh->vertices.buffer || !mesh->indices.buffer)
         throw std::logic_error("Vulkan Shape: indexed draw needs an open frame and live buffers from this device");
@@ -169,45 +180,55 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
         throw std::out_of_range("Vulkan Shape: indexed draw exceeds geometry or is not a triangle list");
     if (!count)
         return;
-    if (!texture && !_whiteTexture)
+    if ((!texture || !detail) && !_whiteTexture)
     {
         const uint32_t white = 0xffffffff;
         _whiteTexture = UploadTexture(1, 1, &white);
     }
     const auto& sampled = texture ? texture : _whiteTexture;
-    if (sampled->device != _device)
+    const auto& sampledDetail = detail ? detail : _whiteTexture;
+    if (sampled->device != _device || sampledDetail->device != _device)
         throw std::logic_error("Vulkan Shape: texture is not live on this device");
     if (sampler >= 8)
         throw std::out_of_range("Vulkan Shape: sampler index");
-    if (!(blend ? _blendPipeline : _shapePipeline))
-        CreateShapePipeline(blend);
+    auto& pipeline = screen  ? _screenPipelines[depthTest ? (blend ? 2 : 1) : 0]
+                     : blend ? _blendPipeline
+                             : _shapePipeline;
+    if (!pipeline)
+        CreateShapePipeline(blend, screen, depthTest);
     auto& frame = _frames[_frame];
     // Retain each mesh once per frame until that frame's submission fence completes.
     if (std::find(frame.meshes.begin(), frame.meshes.end(), mesh) == frame.meshes.end())
         frame.meshes.push_back(mesh);
     if (std::find(frame.textures.begin(), frame.textures.end(), sampled) == frame.textures.end())
         frame.textures.push_back(sampled);
-    vkCmdBindPipeline(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, blend ? _blendPipeline : _shapePipeline);
-    vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 0, 1,
-                            &sampled->descriptors[sampler], 0, nullptr);
+    if (std::find(frame.textures.begin(), frame.textures.end(), sampledDetail) == frame.textures.end())
+        frame.textures.push_back(sampledDetail);
+    vkCmdBindPipeline(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+    const VkDescriptorSet descriptors[] = {sampled->descriptors[sampler], sampledDetail->descriptors[0]};
+    vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 0, 2, descriptors, 0,
+                            nullptr);
     const VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(frame.command, 0, 1, &mesh->vertices.buffer, &offset);
     vkCmdBindIndexBuffer(frame.command, mesh->indices.buffer, 0, index16 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
     const VkViewport viewport{0, 0, float(_extent.width), float(_extent.height), 0, 1};
     const VkRect2D scissor{{0, 0}, _extent};
     vkCmdSetViewport(frame.command, 0, 1, &viewport);
-    vkCmdSetScissor(frame.command, 0, 1, &scissor);
-    std::array<float, 22> constants{};
+    vkCmdSetScissor(frame.command, 0, 1, clip ? clip : &scissor);
+    std::array<float, 28> constants{};
     std::copy(mvp.begin(), mvp.end(), constants.begin());
     std::copy(color.begin(), color.end(), constants.begin() + 16);
     constants[20] = alphaCutoff;
     constants[21] = 1 / _gamma;
+    constants[22] = detail ? secondaryMode : 0;
+    std::copy(lightDirection.begin(), lightDirection.end(), constants.begin() + 24);
     vkCmdPushConstants(frame.command, _shapeLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(constants), constants.data());
     vkCmdDrawIndexed(frame.command, count, 1, firstIndex, 0, 0);
     if (!_loggedShape)
     {
-        std::fprintf(stderr, "Vulkan: first production Shape draw: firstIndex=%u count=%u\n", firstIndex, count);
+        std::fprintf(stderr, "Vulkan: first production %s draw: firstIndex=%u count=%u\n", screen ? "2D" : "Shape",
+                     firstIndex, count);
         _loggedShape = true;
     }
 }

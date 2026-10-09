@@ -468,6 +468,9 @@ class Engine : public IGraphicsEngine
     //                          the per-poly INCR/EQUAL-0 dance.
     virtual void BeginShadowPass() {}
     virtual void EndShadowPass() {}
+    // Optional renderer feature: an unsupported backend must decline the pass,
+    // rather than pretend its shadow drawing commands succeeded.
+    virtual bool SupportsProjectedShadows() const { return true; }
 
     // integrated transform&lighting
     virtual bool GetTL() const { return false; }
