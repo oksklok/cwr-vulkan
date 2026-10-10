@@ -1041,3 +1041,42 @@ Original endpoint mute and Caps Lock state were preserved; no game remains open.
 
 The highest-value next visual-parity milestone is the pre-existing white
 water/shoreline artifact visible in Infantry, not further map command reduction.
+
+## Water/shoreline cause and targeted correction (2026-10-10)
+
+The white Infantry strip was reproduced against GL33 with the same scripted
+camera position/target, dawn time, weather, visibility, 800x600 and copied profile.
+A temporary magenta tag on native SpecularTexture draws covered exactly the
+white pixels: these are landscape water Shapes, not software geometry, missing
+terrain, a surface overlay or a stale UI texture. The tag and trace logging were
+removed after diagnosis. Evidence: `build/shadow-live/water-{baseline-vk,
+baseline-gl33,trace-vk,trace-gl33,fixed-vk}`.
+
+The actual native section flags are 0x02002000 (SpecularTexture | NoClamp), with
+animated `data/more_anim.*.pac` primary textures and `data/specular_dx.paa` as the
+secondary texture. LandscapeRender's WaterFlags deliberately do NOT include
+IsWater. GL33's captured state is PSDetail (shader 1), SpecularTex (format 2):
+TGDetail supplies 32x secondary UVs and PSDetail multiplies lit primary RGB by
+secondary alpha * 2. Vulkan had inferred a water bump shader from the texture
+source flag alone, decoded secondary RGB as a normal at unscaled UVs, and added
+a large clamped light dot product. This erroneous additive term caused the white
+patches. Neither a different depth state nor forcing the unused IsWater/TGWater
+branch addresses that mismatch. The earlier unsuccessful state experiments
+recorded above were not adopted.
+
+Vulkan now derives secondary shader mode from the existing shared render-pass
+descriptor, independently of the secondary texture source. This selects the
+already-implemented detail-alpha shader operation for ordinary stock water.
+Original textures/mips, animated frame selection, material lighting, fog, gamma,
+repeat samplers, opaque depth-tested/depth-writing geometry and render order are
+unchanged. No colors are substituted and no water geometry/effects are hidden.
+The explicit IsWater family remains unsupported rather than being silently
+enabled; no speculative new water shader or global sampler/fog change was added.
+
+The original white strip is gone in the matched fixed capture, with a second
+bay-facing capture showing ordinary near/distant water and shoreline continuity.
+Both builds pass: 33 focused cases / 285 assertions ON, 32 / 280 OFF, plus 114
+driver-free policy checks. The new regression locks the distinction between
+SpecularTexture and IsWater and preserves sampler/alpha/depth policy. The first
+fixed Infantry run closed normally with 10,834 submissions and zero Khronos
+core/synchronization errors or warnings. Wider water-condition checks follow.

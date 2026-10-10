@@ -2,6 +2,7 @@
 
 #include <Poseidon/Graphics/Rendering/Shape/Shape.hpp>
 #include <Poseidon/Graphics/Rendering/RenderFlags.hpp>
+#include <Poseidon/Graphics/Rendering/BuildRenderPassDescriptor.hpp>
 #include <Poseidon/Graphics/Textures/PAADecoder.hpp>
 #include <array>
 #include <cstdint>
@@ -10,6 +11,16 @@
 
 namespace Poseidon::vk
 {
+// Texture source and shader family are independent. In particular landscape
+// water uses SpecularTexture WITHOUT IsWater: GL33 selects PSDetail/TGDetail,
+// sampling the specular texture's alpha at 32x UV, not its RGB as a bump normal.
+inline float ShapeSecondaryMode(const render::LegacySpec& spec)
+{
+    const auto pass = render::BuildRenderPassDescriptor(spec, {true, true});
+    return pass.shader == render::ShaderFamily::Water ? 2.f :
+           pass.shader == render::ShaderFamily::Detail ? 1.f : 0.f;
+}
+
 struct ShapeAlphaState
 {
     bool blend;

@@ -12,7 +12,7 @@ void main() {
     outColor = texture(diffuseTexture, texCoord) * draw.color * vertexColor;
     // Match GL33 TGDetail's 32x UV and PSDetail's alpha modulation.
     if (draw.detailEnabled > 1.5) {
-        // Stock SpecularTexture path, matching GL33's decoded bump sample.
+        // Explicit Water shader family, not SpecularTexture alone.
         vec3 bumpNormal = -(texture(detailTexture, texCoord).xyz * 2.0 - 1.0);
         outColor.rgb += clamp(dot(draw.lightDirection.xyz, bumpNormal), 0.0, 1.0);
     } else if (draw.detailEnabled > 0.5) outColor.rgb *= texture(detailTexture, texCoord * 32.0).a * 2.0;

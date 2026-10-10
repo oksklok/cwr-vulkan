@@ -8,6 +8,27 @@
 
 using namespace Poseidon;
 
+TEST_CASE("Vulkan stock water separates secondary texture source from shader family", "[Graphics][vulkan-shape]")
+{
+    // LandscapeRender's current WaterFlags and the captured Infantry section.
+    const auto water = render::SplitLegacy(SpecularTexture | NoClamp);
+    REQUIRE(vk::SupportedShapeSpec(water));
+    REQUIRE(vk::ShapeSecondaryMode(water) == 1.f);
+    REQUIRE(vk::ShapeSecondaryMode(render::SplitLegacy(DetailTexture)) == 1.f);
+    REQUIRE(vk::ShapeSecondaryMode(render::SplitLegacy(0)) == 0.f);
+    REQUIRE(vk::ShapeSampler(water) == 0); // Both ordinary water textures repeat.
+    const auto alpha = vk::ShapeAlpha(water, AlphaStats::Opaque, 1);
+    REQUIRE_FALSE(alpha.blend);
+    REQUIRE(alpha.cutoff == 0);
+    REQUIRE(alpha.depthTest);
+    REQUIRE(alpha.depthWrite);
+    // IsWater is a distinct shader family; this fix must not change engine flags
+    // or silently advertise support for the as-yet unused explicit Water path.
+    const auto explicitWater = render::SplitLegacy(IsWater | SpecularTexture | NoClamp);
+    REQUIRE(vk::ShapeSecondaryMode(explicitWater) == 2.f);
+    REQUIRE_FALSE(vk::SupportedShapeSpec(explicitWater));
+}
+
 TEST_CASE("Vulkan consecutive screen batches preserve fans attributes and 32-bit indices", "[Graphics][vulkan-shape]")
 {
     vk::ScreenBatch batch;
