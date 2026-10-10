@@ -121,7 +121,8 @@ void EngineVK::SubmitSoftware(const std::vector<uint32_t>& indices)
     _vk.DrawMesh(mesh.buffers, 0, indices.size(), false, {}, {1, 1, 1, 1}, image,
                  vk::ShapeSampler(render::SplitLegacy(_softwareFlags)), cutoff, blend, true,
                  (_softwareFlags & NoZBuf) == 0, nullptr, {}, 1, {0, -1, 0}, mesh.vertexOffset, mesh.indexOffset,
-                 (_softwareFlags & NoZWrite) == 0, &receiver, shadow, !shadow && (_softwareFlags & IsLight) != 0);
+                 (_softwareFlags & NoZWrite) == 0, receiver.shadowReceiver[0] ? &receiver : nullptr,
+                 shadow, !shadow && (_softwareFlags & IsLight) != 0);
 }
 void EngineVK::EndMesh(TLVertexTable& mesh)
 {

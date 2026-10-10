@@ -25,15 +25,77 @@ bands, distance/fog fade and sunlight strength. World-effect boundaries and
 material flags exclude UI, sky and cockpit/weapon overlays. Maps reset each frame
 and become inactive at night. Opt-in profiling reports cascade depth GPU time.
 
-Initial verification: Vulkan and GL33-only builds, 56 focused cases / 738
-assertions, and driver-free Vulkan policy/command-cache checks pass. Stock
-Infantry at 1920x1080 shows soldier, building and cutout foliage shadows; on/off
-screenshots and a GL33 reference are under ignored `build/shadow-live/csm-*`.
-Infantry movement, camera changes, firing, grenades (stock count 6 to 4), map,
-pause, CSM+SSAO, resize/minimize/restore and normal exit ran with zero Khronos
-core/synchronization warnings/errors (10,693 submitted frames). A separate first
-run also closed cleanly after 7,131 frames. Broader qualification follows below;
-these runs alone are not a completed gameplay/performance acceptance claim.
+Verification: Vulkan and GL33-only builds, 56 focused cases / 738 assertions,
+and driver-free Vulkan policy/command-cache checks pass. Both configurations
+launch GL33 without a renderer override, with shadow maps disabled. GL33 renderer
+files, stock assets and localization are unchanged. Software submissions without a shadow receiver keep
+the original unlit path (including CSM OFF), rather than counting as native lit
+draws or copying unnecessary receiver data.
+
+Stock gameplay at 1920x1080 on the RTX 4060 Ti was exercised with exact-window
+input and isolated profiles. Developer commands repositioned actors/set daylight;
+these are rendering/gameplay checks, not completed mission playthroughs:
+
+- Infantry village: walking, weapon fire, grenades (stock count 6 -> 4), moving
+  soldier silhouettes, building receivers, foliage cutouts, map and pause.
+- HMMWV: about 50 m of driving (42 km/h sampled), exterior/interior changes,
+  recognizable vehicle shadows, fences and low-sun shadows (sun factor 0.82).
+- Heavy Metal: tank movement, exterior/optics, cannon fire (24 -> 23 rounds;
+  developer-assisted gunner seat change), smoke, CSM with SSAO, and live switching
+  between four/2048 and two/1024 cascades.
+- Ground Attack: stock Cobra cockpit/exterior, rotor startup and takeoff to
+  about 39 m. HUD and cockpit overlays remain unshadowed; SSAO was also enabled.
+- Shadow Killer: sunlight factor zero, no cascade passes, NVG, movement and
+  HK fire (30 -> 29 rounds), CSM OFF/ON and SSAO.
+- Normal menu -> Ambush -> save -> movement -> load restored the exact saved
+  position with CSM still enabled. Water/shoreline with CSM+SSAO, resize,
+  minimize/restore, and normal window close were checked separately.
+
+All nine validated Vulkan sessions closed normally with zero Khronos core and
+synchronization errors/warnings through teardown (57,649 submitted frames,
+including the initial depth-pass development run). The final software fallback
+adjustment was rechecked in the 2,500-frame tank firing/SSAO session. No new
+water, cutout, smoke, gamma, specular, cockpit or command-cache regression was
+observed; this is sampled coverage, not exhaustive certification.
+
+Before/after captures, actions, launch hashes and validation logs are retained
+locally under ignored `build/shadow-live/csm-*`. `csm-direct-{infantry,hmmwv,tank}`
+contains repeated OFF/ON comparisons; `csm-{infantry,hmmwv,tank,night}-gl33`
+contains GL33 shadow-map references. References are representative gameplay
+views, not pixel-registered cross-renderer comparisons. Moving captures and
+position/ammunition receipts accompany the static comparisons.
+
+Performance: 1920x1080, RTX 4060 Ti, four 2048 cascades, 900 m view distance,
+SSAO/validation off, frozen simulation and repeated 12 s OFF/ON phases. Values
+are medians of 2 s profile windows (first three startup windows and mixed-toggle
+windows excluded; 10-13 samples/mode). FIFO/display pacing limits these results;
+depth GPU timestamps cover all cascades, **not** the complete frame GPU cost.
+
+| Scene | Projected frame ms | CSM frame ms | CSM depth GPU ms | Geometry upload ms, OFF -> ON |
+|---|---:|---:|---:|---:|
+| Infantry village | 6.491 | 6.184 | 0.356 | 0.680 -> 0.441 |
+| HMMWV road | 6.172 | 6.172 | 0.276 | 0.247 -> 0.249 |
+| Heavy Metal, tank-mounted view | 6.173 | 6.172 | 0.407 | 0.109 -> 0.135 |
+
+Steady-state transient allocations were zero. CSM removes projected draw/upload
+work, explaining the village improvement; these are not uncapped throughput
+claims. Two frame slots at four/2048 retain about 128 MiB of depth images.
+Earlier `csm-perf-*` logs had managed stdout/stderr-pump stalls and are excluded:
+repeating with direct file handles (`csm-direct-*`) removed those timing spikes.
+
+Quality/readiness: usable as an opt-in developer enhancement, not a new default.
+Keep GL33's four 2048 cascades, 0.00002 bias, 3x3 PCF, 40 m fade and existing
+distance/LOD controls. No new scheduler or shadow LOD framework was justified.
+Model silhouettes and alpha cutouts follow the shared caster system; terrain
+receives but is not added as a caster. Low-detail caster silhouettes, fine
+foliage self-shadow striping and finite-resolution shimmer remain visible in
+both backends. Camera movement showed no severe cascade instability, but this
+does not eliminate every LOD/cascade transition. Software TL reception modulates
+its already-combined lighting, so it cannot isolate only the sunlight component
+as precisely as a per-light shader. Sky, UI and cockpit/weapon overlays are
+deliberately excluded. No claim of all-model/all-campaign coverage is made.
+
+## Earlier backend qualification (before CSM)
 
 Current status: Vulkan remains opt-in. Sustained mission-flow testing now covers
 infantry, campaign transitions, tank driving/gunnery, helicopter flight/landing,
