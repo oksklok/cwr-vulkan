@@ -50,11 +50,11 @@ VkResult CreateHostVisibleBuffer(VkPhysicalDevice physical, VkDevice device, VkD
     return result;
 }
 
-void UploadMappedBuffer(const BufferVK& buffer, const void* data, size_t size)
+void UploadMappedBuffer(const BufferVK& buffer, const void* data, size_t size, VkDeviceSize offset)
 {
-    if (!buffer.mapped || !data || size > buffer.size)
+    if (!buffer.mapped || !data || offset > buffer.size || size > buffer.size - offset)
         throw std::invalid_argument("Vulkan: invalid or oversized mapped-buffer upload");
-    std::memcpy(buffer.mapped, data, size);
+    std::memcpy(static_cast<char*>(buffer.mapped) + offset, data, size);
 }
 
 void DestroyBuffer(VkDevice device, BufferVK& buffer) noexcept

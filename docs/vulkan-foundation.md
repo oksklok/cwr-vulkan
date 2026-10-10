@@ -541,3 +541,23 @@ textures and cutout foliage remain visible, HUD/UI still blend. Movement,
 resize/minimize/restore and close passed with zero validation issues through
 shutdown (menu 83 and mission 95 submissions). Focused decoder/stock/Shape tests:
 30 cases/4364 assertions; policy CTest passes. Both build configurations passed.
+
+Transient profiling (`CWR_VK_PROFILE=1`) measures wall frame intervals/p95, CPU
+recording/upload/retirement and fence/acquire/present waits separately. With
+Khronos validation enabled, matched intro intervals at about 353 submissions/frame
+improved from 117.3 ms / 8.5 FPS to 6.45 ms / 155 FPS; buffer allocations/frame
+fell from 706 to zero after warm-up, geometry uploads from 33.7 to 0.20 ms and
+retirement from 72.6 to 0.001 ms. GPU execution time is not timestamp-profiled.
+Take the Car before: 92-179 ms/frame, 502-878 allocations/frame, 24-43 ms upload;
+after: representative settled intervals 10.7 ms / 93 FPS, zero allocations and
+0.032 ms uploads, despite about 570 transient submissions/frame. Different mission
+views are not a controlled FPS comparison. Settled static textures do not reupload;
+occasional font/interpolated image updates remain real uploads/fence waits.
+Two frame slots now retain mapped 4 MiB vertex/1 MiB index pages. A completed slot
+fence resets cursors; overflow adds a page without replacing recorded buffers.
+Immutable P3D allocations are unchanged. Offset-copy guards add two focused checks
+(policy total 87). Sustained intro before/after captures, mission movement, resize,
+restore, close and timed exit were inspected with zero validation issues. The
+first requested 60-second stationary mission ended naturally after about 30 s;
+it supplied profiling but did not pass that duration gate. A 40-second sustained
+intro and a 25-second timed mission passed separately. Evidence: `profile-*`.

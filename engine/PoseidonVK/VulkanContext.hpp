@@ -7,6 +7,7 @@
 #include <string>
 #include <memory>
 #include <span>
+#include <chrono>
 
 namespace Poseidon::vk
 {
@@ -38,6 +39,11 @@ struct TextureImage
     ~TextureImage();
     void Destroy() noexcept;
 };
+struct MeshSlice
+{
+    std::shared_ptr<MeshBuffers> buffers;
+    VkDeviceSize vertexOffset = 0, indexOffset = 0;
+};
 // Backend-private Vulkan ownership. SDL owns the window; this owns its surface.
 // No engine drawing, asset or GL types are involved in device/swapchain lifetime.
 class VulkanContext
@@ -63,6 +69,7 @@ class VulkanContext
     void DrawDiagnosticTriangle(); // Explicit DrawTestPattern seam, never an automatic gameplay draw.
     std::shared_ptr<MeshBuffers> UploadMesh(const void* vertices, size_t vertexBytes, const void* indices,
                                             size_t indexBytes);
+    MeshSlice UploadTransientMesh(const void* vertices, size_t vertexBytes, const void* indices, size_t indexBytes);
     std::shared_ptr<TextureImage> UploadTexture(uint32_t width, uint32_t height, const void* rgba);
     std::shared_ptr<TextureImage> UploadTexture(std::span<const TextureMip> mips);
     void DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t firstIndex, uint32_t count, bool index16,
@@ -70,7 +77,8 @@ class VulkanContext
                   const std::shared_ptr<TextureImage>& texture = {}, unsigned sampler = 0, float alphaCutoff = 0,
                   bool blend = false, bool screen = false, bool depthTest = true, const VkRect2D* clip = nullptr,
                   const std::shared_ptr<TextureImage>& detail = {}, float secondaryMode = 1,
-                  const std::array<float, 3>& lightDirection = {0, -1, 0});
+                  const std::array<float, 3>& lightDirection = {0, -1, 0}, VkDeviceSize vertexOffset = 0,
+                  VkDeviceSize indexOffset = 0);
     void EndFrame();
     bool FrameOpen() const { return _frameOpen; }
     VkExtent2D Extent() const { return _extent; }
@@ -80,13 +88,34 @@ class VulkanContext
     float Gamma() const { return _gamma; }
 
   private:
+    // Opt-in bounded measurement, not a scheduler or frame-time governor.
+    struct Profile
+    {
+        bool enabled = false;
+        double lastEnd = 0, frameStart = 0;
+        double recordMs = 0, geometryMs = 0, textureMs = 0, fenceMs = 0, retireMs = 0, acquireMs = 0, presentMs = 0;
+        uint64_t transient = 0, allocations = 0, textureUploads = 0;
+        std::vector<double> times;
+    } _profile;
+    static double ProfileClock()
+    {
+        return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+    void ReportProfile();
     struct Frame
     {
+        struct TransientPage
+        {
+            std::shared_ptr<MeshBuffers> buffers;
+            VkDeviceSize vertexUsed = 0, indexUsed = 0;
+        };
         VkCommandBuffer command = VK_NULL_HANDLE;
         VkSemaphore acquired = VK_NULL_HANDLE;
         VkFence submitted = VK_NULL_HANDLE;
         std::vector<std::shared_ptr<MeshBuffers>> meshes;
         std::vector<std::shared_ptr<TextureImage>> textures;
+        std::vector<TransientPage> transientPages;
+        size_t transientPage = 0;
     };
     static constexpr size_t FramesInFlight = 2;
     VkInstance _instance = VK_NULL_HANDLE;

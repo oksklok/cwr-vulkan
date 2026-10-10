@@ -28,6 +28,6 @@ inline uint32_t FindMemoryType(const VkPhysicalDeviceMemoryProperties& memory, u
 
 VkResult CreateHostVisibleBuffer(VkPhysicalDevice physical, VkDevice device, VkDeviceSize size,
                                  VkBufferUsageFlags usage, BufferVK& out);
-void UploadMappedBuffer(const BufferVK& buffer, const void* data, size_t size);
+void UploadMappedBuffer(const BufferVK& buffer, const void* data, size_t size, VkDeviceSize offset = 0);
 void DestroyBuffer(VkDevice device, BufferVK& buffer) noexcept;
 } // namespace Poseidon::vk

@@ -115,6 +115,21 @@ int TestVulkanBuffers()
             const uint32_t bytes = 0x12345678;
             UploadMappedBuffer(buffer, &bytes, sizeof(bytes));
             check(std::memcmp(mappedBytes.data(), &bytes, sizeof(bytes)) == 0, "upload must copy the actual bytes");
+            const uint32_t second = 0xaabbccdd;
+            UploadMappedBuffer(buffer, &second, sizeof(second), 8);
+            check(std::memcmp(mappedBytes.data(), &bytes, sizeof(bytes)) == 0 &&
+                      std::memcmp(mappedBytes.data() + 8, &second, sizeof(second)) == 0,
+                  "mapped slices must not overwrite earlier recorded geometry");
+            bool offsetRejected = false;
+            try
+            {
+                UploadMappedBuffer(buffer, &second, sizeof(second), 15);
+            }
+            catch (const std::invalid_argument&)
+            {
+                offsetRejected = true;
+            }
+            check(offsetRejected, "slice bounds must include the offset before copying");
             check(CreateHostVisibleBuffer(physical, device, 16, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, buffer) ==
                       VK_ERROR_INITIALIZATION_FAILED,
                   "live buffers must not be silently replaced");

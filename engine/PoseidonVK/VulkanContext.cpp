@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <stdexcept>
 #include <type_traits>
+#include <cstdlib>
+#include <numeric>
 
 namespace Poseidon::vk
 {
@@ -82,6 +84,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanContext::ValidationMessage(VkDebugUtilsMess
 
 void VulkanContext::CreateInstance(const char* const* extensions, uint32_t count, bool validation)
 {
+    _profile.enabled = std::getenv("CWR_VK_PROFILE") != nullptr;
     if (_instance)
         throw std::logic_error("Vulkan: instance already created");
     if (!extensions || !count)
@@ -326,10 +329,12 @@ void VulkanContext::DestroySwapchain() noexcept
 {
     for (auto& pipeline : _screenPipelines)
     {
-        if (pipeline) vkDestroyPipeline(_device, pipeline, nullptr);
+        if (pipeline)
+            vkDestroyPipeline(_device, pipeline, nullptr);
         pipeline = VK_NULL_HANDLE;
     }
-    if (_blendPipeline) vkDestroyPipeline(_device, _blendPipeline, nullptr);
+    if (_blendPipeline)
+        vkDestroyPipeline(_device, _blendPipeline, nullptr);
     _blendPipeline = VK_NULL_HANDLE;
     if (_shapePipeline)
         vkDestroyPipeline(_device, _shapePipeline, nullptr);
@@ -549,13 +554,27 @@ bool VulkanContext::BeginFrame(uint32_t width, uint32_t height)
         return false;
     if (!PrepareSwapchain(width, height))
         return false;
+    if (_profile.enabled)
+        _profile.frameStart = ProfileClock();
     auto& frame = _frames[_frame];
     Check(vkWaitForFences(_device, 1, &frame.submitted, VK_TRUE, UINT64_MAX), "wait frame fence");
+    const double fenceEnd = _profile.enabled ? ProfileClock() : 0;
+    if (_profile.enabled)
+        _profile.fenceMs += fenceEnd - _profile.frameStart;
     frame.meshes.clear();
     frame.textures.clear();
+    // Only this frame's completed fence permits overwriting its mapped pages.
+    frame.transientPage = 0;
+    for (auto& page : frame.transientPages)
+        page.vertexUsed = page.indexUsed = 0;
+    const double retireEnd = _profile.enabled ? ProfileClock() : 0;
+    if (_profile.enabled)
+        _profile.retireMs += retireEnd - fenceEnd;
     // A finite acquire timeout avoids blocking forever if the surface stops progressing.
     const VkResult acquired =
         vkAcquireNextImageKHR(_device, _swapchain, 1000000000ULL, frame.acquired, VK_NULL_HANDLE, &_image);
+    if (_profile.enabled)
+        _profile.acquireMs += ProfileClock() - retireEnd;
     if (acquired == VK_ERROR_OUT_OF_DATE_KHR)
     {
         _recreate = true;
@@ -641,7 +660,13 @@ void VulkanContext::EndFrame()
     present.swapchainCount = 1;
     present.pSwapchains = &_swapchain;
     present.pImageIndices = &_image;
+    const double presentStart = _profile.enabled ? ProfileClock() : 0;
     const VkResult result = vkQueuePresentKHR(_present, &present);
+    if (_profile.enabled)
+    {
+        _profile.presentMs += ProfileClock() - presentStart;
+        ReportProfile();
+    }
     _frameOpen = false;
     _frame = (_frame + 1) % _frames.size();
     if (NeedsRecreation(result))
@@ -654,6 +679,36 @@ void VulkanContext::EndFrame()
             std::fprintf(stderr, "Vulkan: first frame submitted and presented\n");
         ++_presentedFrames;
     }
+}
+
+void VulkanContext::ReportProfile()
+{
+    const double now = ProfileClock();
+    _profile.recordMs += now - _profile.frameStart;
+    if (_profile.lastEnd)
+        _profile.times.push_back(now - _profile.lastEnd);
+    _profile.lastEnd = now;
+    const double total = std::accumulate(_profile.times.begin(), _profile.times.end(), 0.0);
+    if (total < 2000 || _profile.times.empty())
+        return;
+    auto times = _profile.times;
+    std::sort(times.begin(), times.end());
+    const double frames = double(times.size());
+    std::fprintf(
+        stderr,
+        "Vulkan profile: frames=%zu fps=%.2f frame_ms=%.3f p95_ms=%.3f record_ms=%.3f "
+        "transient/frame=%.1f allocations/frame=%.1f geometry_upload_ms/frame=%.3f "
+        "texture_uploads=%llu texture_upload_ms=%.3f fence_ms/frame=%.3f retire_ms/frame=%.3f acquire_ms/frame=%.3f "
+        "present_ms/frame=%.3f\n",
+        times.size(), frames * 1000 / total, total / frames, times[size_t((times.size() - 1) * 0.95)],
+        _profile.recordMs / frames, _profile.transient / frames, _profile.allocations / frames,
+        _profile.geometryMs / frames, static_cast<unsigned long long>(_profile.textureUploads), _profile.textureMs,
+        _profile.fenceMs / frames, _profile.retireMs / frames, _profile.acquireMs / frames,
+        _profile.presentMs / frames);
+    const double last = _profile.lastEnd;
+    _profile = {};
+    _profile.enabled = true;
+    _profile.lastEnd = last;
 }
 
 void VulkanContext::WaitIdle()
@@ -674,7 +729,8 @@ unsigned VulkanContext::Shutdown() noexcept
                 mesh->Destroy();
         _meshes.clear();
         for (auto& entry : _textures)
-            if (auto texture = entry.lock()) texture->Destroy();
+            if (auto texture = entry.lock())
+                texture->Destroy();
         _textures.clear();
         _whiteTexture.reset();
         DestroySwapchain();
@@ -687,11 +743,13 @@ unsigned VulkanContext::Shutdown() noexcept
         if (_shapeLayout)
             vkDestroyPipelineLayout(_device, _shapeLayout, nullptr);
         _shapeLayout = VK_NULL_HANDLE;
-        if (_textureLayout) vkDestroyDescriptorSetLayout(_device, _textureLayout, nullptr);
+        if (_textureLayout)
+            vkDestroyDescriptorSetLayout(_device, _textureLayout, nullptr);
         _textureLayout = VK_NULL_HANDLE;
         for (auto& sampler : _textureSamplers)
         {
-            if (sampler) vkDestroySampler(_device, sampler, nullptr);
+            if (sampler)
+                vkDestroySampler(_device, sampler, nullptr);
             sampler = VK_NULL_HANDLE;
         }
         for (auto& frame : _frames)

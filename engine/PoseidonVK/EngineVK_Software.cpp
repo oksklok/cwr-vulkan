@@ -78,8 +78,8 @@ void EngineVK::SubmitSoftware(const std::vector<uint32_t>& indices)
         vertex.color = source.color;
         _softwareVertices[index] = vk::ScreenGeometry(vertex, _width, _height);
     }
-    auto mesh = _vk.UploadMesh(_softwareVertices.data(), _softwareVertices.size() * sizeof(vk::ScreenVertex),
-                               indices.data(), indices.size() * sizeof(uint32_t));
+    auto mesh = _vk.UploadTransientMesh(_softwareVertices.data(), _softwareVertices.size() * sizeof(vk::ScreenVertex),
+                                        indices.data(), indices.size() * sizeof(uint32_t));
     std::shared_ptr<vk::TextureImage> image;
     auto alpha = AlphaStats::Opaque;
     if (_softwareMip._texture)
@@ -91,9 +91,9 @@ void EngineVK::SubmitSoftware(const std::vector<uint32_t>& indices)
         alpha = texture->GetAlphaClass();
     }
     const bool blend = alpha == AlphaStats::Blend || (_softwareFlags & (NoZWrite | IsAlpha | IsAlphaFog)) != 0;
-    _vk.DrawMesh(mesh, 0, indices.size(), false, {}, {1, 1, 1, 1}, image,
+    _vk.DrawMesh(mesh.buffers, 0, indices.size(), false, {}, {1, 1, 1, 1}, image,
                  vk::ShapeSampler(render::SplitLegacy(_softwareFlags)), alpha == AlphaStats::Cutout ? 0.5f : 0, blend,
-                 true, (_softwareFlags & NoZBuf) == 0);
+                 true, (_softwareFlags & NoZBuf) == 0, nullptr, {}, 1, {0, -1, 0}, mesh.vertexOffset, mesh.indexOffset);
 }
 void EngineVK::EndMesh(TLVertexTable& mesh)
 {

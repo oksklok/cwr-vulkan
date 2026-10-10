@@ -6,6 +6,7 @@
 #include <PoseidonVK/Shaders/shape.frag.hpp>
 #include <PoseidonVK/Shaders/screen.vert.hpp>
 #include <cstdio>
+#include <cstring>
 
 namespace Poseidon::vk
 {
@@ -51,9 +52,57 @@ std::shared_ptr<MeshBuffers> VulkanContext::UploadMesh(const void* vertices, siz
         throw std::runtime_error("Vulkan Shape: index buffer allocation failed (" + std::to_string(indexResult) + ")");
     UploadMappedBuffer(mesh->vertices, vertices, vertexBytes);
     UploadMappedBuffer(mesh->indices, indices, indexBytes);
+    if (_profile.enabled)
+        _profile.allocations += 2;
     std::erase_if(_meshes, [](const auto& entry) { return entry.expired(); });
     _meshes.push_back(mesh);
     return mesh;
+}
+
+MeshSlice VulkanContext::UploadTransientMesh(const void* vertices, size_t vertexBytes, const void* indices,
+                                             size_t indexBytes)
+{
+    if (!_frameOpen || !vertices || !indices || !vertexBytes || !indexBytes)
+        throw std::invalid_argument("Vulkan transient upload requires an acquired frame and nonempty geometry");
+    const double started = _profile.enabled ? ProfileClock() : 0;
+    auto& frame = _frames[_frame];
+    for (;; ++frame.transientPage)
+    {
+        if (frame.transientPage == frame.transientPages.size())
+        {
+            // Grow by adding a page, never replacing a buffer already referenced
+            // by recorded commands. Retained pages are reused at the next fence.
+            auto buffers = std::make_shared<MeshBuffers>();
+            buffers->device = _device;
+            Require(CreateHostVisibleBuffer(_physical, _device, std::max<size_t>(4 * 1024 * 1024, vertexBytes),
+                                            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, buffers->vertices),
+                    "allocate transient vertices");
+            Require(CreateHostVisibleBuffer(_physical, _device, std::max<size_t>(1024 * 1024, indexBytes),
+                                            VK_BUFFER_USAGE_INDEX_BUFFER_BIT, buffers->indices),
+                    "allocate transient indices");
+            frame.transientPages.push_back({buffers});
+            _meshes.push_back(buffers);
+            if (_profile.enabled)
+                _profile.allocations += 2;
+        }
+        auto& page = frame.transientPages[frame.transientPage];
+        const VkDeviceSize vertexOffset = (page.vertexUsed + 3) & ~VkDeviceSize(3);
+        const VkDeviceSize indexOffset = (page.indexUsed + 3) & ~VkDeviceSize(3);
+        if (vertexOffset > page.buffers->vertices.size || indexOffset > page.buffers->indices.size ||
+            vertexBytes > page.buffers->vertices.size - vertexOffset ||
+            indexBytes > page.buffers->indices.size - indexOffset)
+            continue;
+        UploadMappedBuffer(page.buffers->vertices, vertices, vertexBytes, vertexOffset);
+        UploadMappedBuffer(page.buffers->indices, indices, indexBytes, indexOffset);
+        page.vertexUsed = vertexOffset + vertexBytes;
+        page.indexUsed = indexOffset + indexBytes;
+        if (_profile.enabled)
+        {
+            ++_profile.transient;
+            _profile.geometryMs += ProfileClock() - started;
+        }
+        return {page.buffers, vertexOffset, indexOffset};
+    }
 }
 
 void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool depthTest)
@@ -172,12 +221,14 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
                              const std::shared_ptr<TextureImage>& texture, unsigned sampler, float alphaCutoff,
                              bool blend, bool screen, bool depthTest, const VkRect2D* clip,
                              const std::shared_ptr<TextureImage>& detail, float secondaryMode,
-                             const std::array<float, 3>& lightDirection)
+                             const std::array<float, 3>& lightDirection, VkDeviceSize vertexOffset,
+                             VkDeviceSize indexOffset)
 {
     if (!_frameOpen || !mesh || mesh->device != _device || !mesh->vertices.buffer || !mesh->indices.buffer)
         throw std::logic_error("Vulkan Shape: indexed draw needs an open frame and live buffers from this device");
     const VkDeviceSize indexSize = index16 ? 2 : 4;
-    if (VkDeviceSize(firstIndex) + count > mesh->indices.size / indexSize || count % 3 != 0)
+    if (indexOffset > mesh->indices.size || vertexOffset >= mesh->vertices.size || indexOffset % indexSize ||
+        VkDeviceSize(firstIndex) + count > (mesh->indices.size - indexOffset) / indexSize || count % 3 != 0)
         throw std::out_of_range("Vulkan Shape: indexed draw exceeds geometry or is not a triangle list");
     if (!count)
         return;
@@ -209,9 +260,9 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     const VkDescriptorSet descriptors[] = {sampled->descriptors[sampler], sampledDetail->descriptors[0]};
     vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 0, 2, descriptors, 0,
                             nullptr);
-    const VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(frame.command, 0, 1, &mesh->vertices.buffer, &offset);
-    vkCmdBindIndexBuffer(frame.command, mesh->indices.buffer, 0, index16 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
+    vkCmdBindVertexBuffers(frame.command, 0, 1, &mesh->vertices.buffer, &vertexOffset);
+    vkCmdBindIndexBuffer(frame.command, mesh->indices.buffer, indexOffset,
+                         index16 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
     const VkViewport viewport{0, 0, float(_extent.width), float(_extent.height), 0, 1};
     const VkRect2D scissor{{0, 0}, _extent};
     vkCmdSetViewport(frame.command, 0, 1, &viewport);

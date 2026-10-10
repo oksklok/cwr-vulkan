@@ -63,6 +63,7 @@ std::shared_ptr<TextureImage> VulkanContext::UploadTexture(uint32_t width, uint3
 }
 std::shared_ptr<TextureImage> VulkanContext::UploadTexture(std::span<const TextureMip> mips)
 {
+    const double started = _profile.enabled ? ProfileClock() : 0;
     if (!_device || mips.empty())
         throw std::invalid_argument("Vulkan texture upload requires pixels and a live device");
     std::vector<VkBufferImageCopy> copies;
@@ -200,6 +201,12 @@ std::shared_ptr<TextureImage> VulkanContext::UploadTexture(std::span<const Textu
     DestroyBuffer(_device, staging);
     std::erase_if(_textures, [](const auto& entry) { return entry.expired(); });
     _textures.push_back(texture);
+    if (_profile.enabled)
+    {
+        ++_profile.textureUploads;
+        ++_profile.allocations; // Staging buffer; image allocations are counted separately as uploads.
+        _profile.textureMs += ProfileClock() - started;
+    }
     return texture;
 }
 } // namespace Poseidon::vk

@@ -77,8 +77,8 @@ void EngineVK::DrawPoly(const MipInfo& mip, const Vertex2DAbs* vertices, int n, 
         indices.push_back(i - 1);
         indices.push_back(i);
     }
-    auto buffer = _vk.UploadMesh(packed.data(), packed.size() * sizeof(packed[0]), indices.data(),
-                                 indices.size() * sizeof(indices[0]));
+    auto buffer = _vk.UploadTransientMesh(packed.data(), packed.size() * sizeof(packed[0]), indices.data(),
+                                          indices.size() * sizeof(indices[0]));
     std::shared_ptr<vk::TextureImage> image;
     if (mip._texture)
     {
@@ -88,8 +88,9 @@ void EngineVK::DrawPoly(const MipInfo& mip, const Vertex2DAbs* vertices, int n, 
         image = texture->Image(_vk);
     }
     const bool depth = (flags & NoZBuf) == 0;
-    _vk.DrawMesh(buffer, 0, indices.size(), false, {}, {1, 1, 1, 1}, image,
-                 vk::ShapeSampler(render::SplitLegacy(flags)), 0, true, true, depth, &scissor);
+    _vk.DrawMesh(buffer.buffers, 0, indices.size(), false, {}, {1, 1, 1, 1}, image,
+                 vk::ShapeSampler(render::SplitLegacy(flags)), 0, true, true, depth, &scissor, {}, 1, {0, -1, 0},
+                 buffer.vertexOffset, buffer.indexOffset);
 }
 void EngineVK::DrawPoly(const MipInfo& mip, const Vertex2DPixel* vertices, int n, const Rect2DPixel& clip, int flags)
 {
