@@ -90,10 +90,12 @@ void EngineVK::SubmitSoftware(const std::vector<uint32_t>& indices)
         image = texture->Image(_vk);
         alpha = texture->GetAlphaClass();
     }
-    const bool blend = alpha == AlphaStats::Blend || (_softwareFlags & (NoZWrite | IsAlpha | IsAlphaFog)) != 0;
+    const bool blend = alpha == AlphaStats::Blend || (_softwareFlags & (IsAlpha | IsAlphaFog)) != 0;
+    const float cutoff = blend ? 1.f / 255 : alpha == AlphaStats::Cutout ? 0.5f : 0;
     _vk.DrawMesh(mesh.buffers, 0, indices.size(), false, {}, {1, 1, 1, 1}, image,
-                 vk::ShapeSampler(render::SplitLegacy(_softwareFlags)), alpha == AlphaStats::Cutout ? 0.5f : 0, blend,
-                 true, (_softwareFlags & NoZBuf) == 0, nullptr, {}, 1, {0, -1, 0}, mesh.vertexOffset, mesh.indexOffset);
+                 vk::ShapeSampler(render::SplitLegacy(_softwareFlags)), cutoff, blend,
+                 true, (_softwareFlags & NoZBuf) == 0, nullptr, {}, 1, {0, -1, 0}, mesh.vertexOffset, mesh.indexOffset,
+                 (_softwareFlags & NoZWrite) == 0);
 }
 void EngineVK::EndMesh(TLVertexTable& mesh)
 {

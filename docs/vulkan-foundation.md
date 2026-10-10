@@ -604,3 +604,12 @@ Native Shapes still use approximate unlit diffuse/emissive color and no native
 distance fog; shadows, points and full material/effect parity are not implemented.
 No campaign or complete mission was finished. The highest-value next rendering
 milestone is native Shape lighting/fog using the existing engine inputs.
+
+## Lighting/fog follow-up (2026-10-10)
+
+Software TL now uses the same near-zero alpha rejection as 2D for blended
+effects, retaining the opaque cutout threshold only for cutouts. NoZWrite is
+independent of blending: opaque depth-read-only screen pipelines have their
+own key. RTX Heavy Metal movement, firing/grenade, map/pause, resize/restore
+and close were inspected (`build/lighting-live/m1-baseline`), zero validation
+issues through shutdown. Shape state tests and policy CTest pass.

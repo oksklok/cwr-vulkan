@@ -147,13 +147,13 @@ void EngineVK::DrawPoly(const MipInfo& mip, const Vertex2DAbs* vertices, int n, 
         alpha = texture->GetAlphaClass();
     }
     const bool depth = (flags & NoZBuf) == 0;
-    const bool blend = alpha == AlphaStats::Blend || (flags & (IsAlpha | IsAlphaFog | NoZWrite)) != 0;
+    const bool blend = alpha == AlphaStats::Blend || (flags & (IsAlpha | IsAlphaFog)) != 0;
     // Alpha-fog/transparent effects must fade, not disappear at the opaque
     // cutout threshold. GL33 rejects only near-zero alpha on blended draws.
     const float cutoff = blend ? 1.f / 255 : alpha == AlphaStats::Cutout ? 0.5f : 0;
     _vk.DrawMesh(buffer.buffers, 0, indices.size(), false, {}, {1, 1, 1, 1}, image,
                  vk::ShapeSampler(render::SplitLegacy(flags)), cutoff, blend, true, depth, &scissor, {}, 1, {0, -1, 0},
-                 buffer.vertexOffset, buffer.indexOffset);
+                 buffer.vertexOffset, buffer.indexOffset, (flags & NoZWrite) == 0);
 }
 void EngineVK::DrawPoly(const MipInfo& mip, const Vertex2DPixel* vertices, int n, const Rect2DPixel& clip, int flags)
 {

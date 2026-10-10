@@ -78,7 +78,7 @@ class VulkanContext
                   bool blend = false, bool screen = false, bool depthTest = true, const VkRect2D* clip = nullptr,
                   const std::shared_ptr<TextureImage>& detail = {}, float secondaryMode = 1,
                   const std::array<float, 3>& lightDirection = {0, -1, 0}, VkDeviceSize vertexOffset = 0,
-                  VkDeviceSize indexOffset = 0);
+                  VkDeviceSize indexOffset = 0, bool depthWrite = true);
     void EndFrame();
     bool FrameOpen() const { return _frameOpen; }
     VkExtent2D Extent() const { return _extent; }
@@ -146,9 +146,9 @@ class VulkanContext
     VkPipelineLayout _shapeLayout = VK_NULL_HANDLE;
     VkPipeline _shapePipeline = VK_NULL_HANDLE;
     VkPipeline _blendPipeline = VK_NULL_HANDLE;
-    std::array<VkPipeline, 4> _screenPipelines{};
+    std::array<VkPipeline, 8> _screenPipelines{};
     bool _loggedShape = false;
-    void CreateShapePipeline(bool blend = false, bool screen = false, bool depthTest = true);
+    void CreateShapePipeline(bool blend = false, bool screen = false, bool depthTest = true, bool depthWrite = true);
     void CreateDepthAttachment(DepthAttachment& depth);
     std::vector<VkImage> _images;
     std::vector<VkImageView> _views;

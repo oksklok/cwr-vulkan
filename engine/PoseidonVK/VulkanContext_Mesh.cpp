@@ -105,7 +105,7 @@ MeshSlice VulkanContext::UploadTransientMesh(const void* vertices, size_t vertex
     }
 }
 
-void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool depthTest)
+void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool depthTest, bool depthWrite)
 {
     if (!_shapeLayout)
     {
@@ -163,9 +163,8 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         VkPipelineMultisampleStateCreateInfo samples{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
         samples.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
         VkPipelineDepthStencilStateCreateInfo depth{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-        depth.depthTestEnable = depth.depthWriteEnable = depthTest;
-        if (translucent)
-            depth.depthWriteEnable = VK_FALSE;
+        depth.depthTestEnable = depthTest;
+        depth.depthWriteEnable = depthTest && depthWrite && !translucent;
         depth.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
         VkPipelineColorBlendAttachmentState attachment{};
         attachment.blendEnable = translucent;
@@ -197,7 +196,7 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         pipeline.layout = _shapeLayout;
         pipeline.renderPass = _renderPass;
         Require(vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &pipeline, nullptr,
-                                          screen        ? &_screenPipelines[ScreenPipelineIndex(depthTest, translucent)]
+                                          screen        ? &_screenPipelines[ScreenPipelineIndex(depthTest, translucent, depthWrite)]
                                           : translucent ? &_blendPipeline
                                                         : &_shapePipeline),
                 "create graphics pipeline");
@@ -222,7 +221,7 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
                              bool blend, bool screen, bool depthTest, const VkRect2D* clip,
                              const std::shared_ptr<TextureImage>& detail, float secondaryMode,
                              const std::array<float, 3>& lightDirection, VkDeviceSize vertexOffset,
-                             VkDeviceSize indexOffset)
+                             VkDeviceSize indexOffset, bool depthWrite)
 {
     if (!_frameOpen || !mesh || mesh->device != _device || !mesh->vertices.buffer || !mesh->indices.buffer)
         throw std::logic_error("Vulkan Shape: indexed draw needs an open frame and live buffers from this device");
@@ -243,11 +242,12 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
         throw std::logic_error("Vulkan Shape: texture is not live on this device");
     if (sampler >= 8)
         throw std::out_of_range("Vulkan Shape: sampler index");
-    auto& pipeline = screen  ? _screenPipelines[ScreenPipelineIndex(depthTest, blend)]
+    depthWrite = depthWrite && !blend;
+    auto& pipeline = screen  ? _screenPipelines[ScreenPipelineIndex(depthTest, blend, depthWrite)]
                      : blend ? _blendPipeline
                              : _shapePipeline;
     if (!pipeline)
-        CreateShapePipeline(blend, screen, depthTest);
+        CreateShapePipeline(blend, screen, depthTest, depthWrite);
     auto& frame = _frames[_frame];
     // Retain each mesh once per frame until that frame's submission fence completes.
     if (std::find(frame.meshes.begin(), frame.meshes.end(), mesh) == frame.meshes.end())

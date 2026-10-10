@@ -10,6 +10,9 @@ using namespace Poseidon;
 TEST_CASE("Vulkan screen pipeline keys keep every depth blend combination independent", "[Graphics][vulkan-shape]")
 {
     REQUIRE(vk::ScreenPipelineIndex(false, false) == 0);
+    REQUIRE(vk::ScreenPipelineIndex(true, false, false) == 6);
+    REQUIRE(vk::ScreenPipelineIndex(true, true, false) == 7);
+    REQUIRE(vk::ScreenPipelineIndex(false, false, false) == 0);
     REQUIRE(vk::ScreenPipelineIndex(false, true) == 1);
     REQUIRE(vk::ScreenPipelineIndex(true, false) == 2);
     REQUIRE(vk::ScreenPipelineIndex(true, true) == 3);
