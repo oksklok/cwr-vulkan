@@ -1,9 +1,12 @@
 # Vulkan backend development
 
-Current status: Vulkan remains opt-in, with gameplay lighting/fog, projected
-shadows, ordered screen batching and framebuffer-level gamma after complete
-scene/UI composition. Matched cloud/SmokeShell comparisons and the five-mission
-gamma verification are recorded at the end of this document. The measured Infantry map result is
+Current status: Vulkan remains opt-in. Sustained mission-flow testing now covers
+infantry, campaign transitions, tank driving/gunnery, helicopter flight/landing,
+night combat and save/load. It exposed and fixed a combat crash from tracers
+crossing the camera plane. See the final gameplay section for actual coverage,
+assisted transitions and readiness limits; no genuine mission win is claimed.
+Gameplay lighting/fog, projected shadows, ordered screen batching and composed
+framebuffer gamma remain supported. The measured Infantry map result is
 6.55 -> 47.49 FPS with 91.25% fewer screen draws. The dated milestones below are
 historical; their earlier unsupported-feature lists are superseded by later work.
 
@@ -1952,8 +1955,95 @@ all 7596 isolated stock files and 10 repository resource files. No unrelated
 working-tree edit was present at task start. Only this document and the existing
 stock test are retained changes; diagnostic captures remain ignored locally.
 
-Highest-value next milestone: isolate the remaining 25 m foliage difference
-using the exact captured draw's LOD, transformed geometry, UVs, alpha state and
-sampled mip. Establish repeatability before attributing it to anisotropic/BC1
-filtering or renderer semantics. Preserve Vulkan's full-resolution textures;
+The remaining 25 m foliage comparison is a historical visual follow-up, not a
+gameplay compatibility priority. Preserve Vulkan's full-resolution textures;
 neither texture streaming nor global alpha/color tuning is warranted.
+
+## Sustained gameplay and mission flow (2026-10-11)
+
+Baseline `89714c8`, crash fix `4890bfa`, isolated GOG 3.05 assets, copied KyouKyou profiles, windowed
+800x600/960x640. Normal menu selection and briefings were used for the coverage
+below; direct mission startup was used only for crash replay. All Vulkan runs
+enabled Khronos core and synchronization validation. Audio was disabled.
+
+| Stock mission | Gameplay and lifecycle actually exercised |
+| --- | --- |
+| Steal the Car | Genuine objective attempt through town/buildings/vegetation, aiming/fire/reload, weapon switching and a confirmed frag throw (6 -> 5); enemy killed the player before reaching the car. Pause/save, movement away, load restoring position and resumed play; death/load and retry; abort to menu. |
+| 1985 Training | Tutorial look/move stages, run to the repair truck and back (~140 m), action tutorial and first/third-person views. Development save succeeded; ending was then **script-triggered**, followed by stock cutscenes and the next briefing. |
+| 1985 Flashpoint | Normal briefing, stock helicopter passenger flight/landing/unload, squad movement ~300 m through terrain/forest, ~4 minutes of simulation before load. Menu save/load restored the post-landing state and play resumed. **Script-triggered** ending reached Combined Arms briefing; campaign selection persisted across Vulkan and default-GL33 restarts. |
+| Heavy Metal | Normal entry into M1A1 as driver, ~110 m driving into forest, interior/external views, moving shadows/exhaust, exit to foot, menu save/load/resume. Development-assisted gunner seat change; cannon (24 -> 23) and machine-gun fire. **Script-triggered** ending displayed debriefing and returned to menu. |
+| Ground Attack (`04Helitrain`) | Walk to Cobra and enter as pilot, rotor startup, cockpit/external views, takeoff to ~70 m and ~1 km flight. Cannon, Hellfire and FFAR consumption confirmed; airborne menu save/load restored flight. Existing auto-hover action assisted a controlled landing (alive, zero damage, near-zero speed). Abort/menu; mission objectives not completed. |
+| Shadow Killer | Normal night briefing, NVG, ~200 m approach, combat/reload, genuine enemy death and load/resume. Later protected combat against stock AI, with development-set dawn/overcast/fog/rain, exposed the tracer crash. Saved-state replay tested the fix, repeated save/load, map/HUD, resize/minimize/restore and shutdown. |
+
+There were **zero genuine completions**. The Steal the Car attempt failed in
+combat; tutorial stages and helicopter landing succeeded without rewriting
+mission logic. `triEndMission 'end1'` checks are simulated progression, not wins
+or proof that stock victory conditions work. No gameplay solver or mission
+edits were introduced. Protection, seat placement, weather/time changes and
+saved-state replay were limited to explicitly assisted coverage. A SmokeShell
+throw was attempted but consumption was not verified; it is not counted.
+
+### Combat crash and fix
+
+Shadow Killer crashed twice in `Object::DrawLines -> EngineVK::DrawLine ->
+SubmitScreen -> ScreenGeometry`. The first dump contains reciprocal-W values
+`+0.220856249` and `-0.419688940` on the same tracer ribbon. The diagnostic replay
+confirmed another positive/negative pair with projected, non-clipped vertices.
+Vulkan's positive-only check threw on the behind-eye endpoint; this is valid
+homogeneous geometry, not a missing texture or resource-lifetime failure.
+
+`ScreenGeometry` now accepts finite **nonzero signed** reciprocal-W and retains
+its sign for GPU clipping, matching GL33's existing `1 / aRhw` shader path.
+Zero/non-finite inputs remain errors. No GL33, shared clipping, mission or
+renderer architecture change is needed. The captured-coordinate regression
+test fails on the baseline and passes with the fix, including the positive-W
+near-plane intersection. Default GL33 replayed the pre-crash save under fire
+and exited normally. Fixed Vulkan diagnostics processed two negative-W tracers
+without throwing and shut down with 10,737 submitted/presented frames and zero
+validation errors/warnings. Temporary instrumentation was removed.
+
+### Verification and limits
+
+Both Vulkan-enabled and GL33-only RelWithDebInfo builds pass. Focused shape,
+PAA, factory, window metrics/placement suites pass: 74 cases/1,693 assertions
+with Vulkan, 72/1,498 without; explicit stock-mip checks pass 684/504 assertions.
+The driver-free Vulkan policy/lifetime suite passes all 286 checks (its deliberate
+mock teardown error is expected). No broad performance campaign was run.
+
+The initial multi-mission flow ran ~16 wall-clock minutes and exited normally
+with 71,449 submitted/presented frames, zero validation findings; Flashpoint
+private memory stayed ~2.630-2.634 GB with 802 handles in the sampled forest
+segment. The broader vehicle/night session subsequently crashed as described
+above, so it is **not** a clean shutdown-validation pass. Frame profiling showed
+zero steady-state transient allocations between loading/movement events; these
+bounded samples are not a claim of leak-free multi-hour play.
+
+The final uninstrumented replay ran ~9 minutes across Shadow Killer, Heavy Metal,
+Ground Attack and Steal the Car. It repeated combat/save/load, simulated
+debrief/menu, tank driving/save/load/cannon fire, airborne load/cameras/missile
+fire, a fresh normal-menu airborne save/load and zero-damage auto-hover-assisted
+landing. One piloting attempt crashed the helicopter; it did not crash the
+renderer. Temporary harness loading from that death screen left its UI open,
+so replay was restarted from live gameplay; normal menu loading restored both
+gameplay and UI correctly. Combat memory samples were 1.7877/1.7847 GB with 799
+handles across another load (asset caches grew when changing missions).
+Resize/minimize/restore and normal exit passed: 37,360 submitted / 37,359 presented,
+zero validation errors/warnings through shutdown. The one unpresented submission
+is consistent with the resize/out-of-date presentation path, not an outstanding
+frame at shutdown. Both builds also started the default GL33 menu without a
+renderer argument and timed out normally, exit 0 (`gameplay-final-default-gl33-{on,off}`).
+
+One initial Steal the Car death showed a gray background and a shared-engine
+"Ground drawing segment too big" warning, but death controls/load worked.
+Subsequent Vulkan/GL33 death replays and the natural Shadow Killer death did not
+reproduce it; a final Vulkan enemy-caused death at the original location also
+rendered correctly. It remains an unisolated observation, not a verified fix.
+
+Assessment: these checks support real single-player gameplay beyond rendering
+smoke tests, but Vulkan should remain opt-in. Complete mission wins, an unassisted
+campaign, multi-hour stability, fixed-wing aircraft and multiplayer are not
+qualified by this run. No stock assets, missions or localization were changed;
+all 7,596 stock files matched the starting path/size/UTC-mtime inventory.
+Ignored evidence lives in `build/shadow-live/mission-flow-vk2`,
+`mission-breadth-vk`, `tracer-{diag-vk,reference-gl33,fixed-diagnostic-vk}` and
+`mission-final-vk` (screenshots, actions, profiles, logs and crash dumps).
