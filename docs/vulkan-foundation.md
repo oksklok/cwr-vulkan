@@ -1080,3 +1080,25 @@ driver-free policy checks. The new regression locks the distinction between
 SpecularTexture and IsWater and preserves sampler/alpha/depth policy. The first
 fixed Infantry run closed normally with 10,834 submissions and zero Khronos
 core/synchronization errors or warnings. Wider water-condition checks follow.
+
+### Matched water-condition comparison
+
+Six fixed-camera pairs were inspected in `build/shadow-live/water-m3-vk-ready`
+and `water-m3-gl33`, using the GL33-only executable with no renderer override.
+Both used the same copied shadow-enabled profile, 800x600, frozen simulation,
+July 5 1985 and identical camera targets/positions. The original Infantry shore
+and west-facing bay were checked at 05:35 (overcast 0.487594, fog 0, visibility
+900 m); the bay, opposite coast and a low near-water view at noon (overcast 0.3);
+the latter again with fog 0.65 and visibility 300 m. Harness receipts confirmed
+matching camera positions and time. Texture-animation phase and NPC positions
+are not synchronized, so these are controlled visual comparisons, not pixel diffs.
+
+The erroneous white strip is absent. Ordinary water color/brightness, near-wave
+texture, shoreline transitions and fogged horizon are recognizably faithful to
+GL33 across these views. No new seam, missing water or depth overlap was seen.
+Vulkan still has visibly coarser distant terrain/detail and smoother distant
+water than GL33; that existing texture/LOD difference is not concealed by this
+fix. Full native material-specular parity and the unused explicit IsWater family
+are not claimed. No additional shader or global sampler change was justified by
+these comparisons. Both comparison processes closed normally (Vulkan 3,127
+submissions, zero core/synchronization validation errors or warnings).
