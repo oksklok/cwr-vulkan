@@ -936,3 +936,108 @@ lighting set/offset changes, clipping, viewport, complete push bytes, native /
 screen / shadow transitions, diagnostic-layout restoration and reset. Real
 800x600 Infantry map runs have clean core/synchronization validation through
 normal shutdown. Matched timing and wider gameplay verification follow below.
+
+### Measured remaining cost and stop decision
+
+RTX 4060 Ti, stock Infantry map, 800x600, isolated copied profile, ordered batching
+enabled in both binaries. Baseline is 7d98998 plus the same profiling timers;
+cache is e20d527's implementation. Simulation was frozen through the existing
+harness after loading, then the real map was opened with M. Each result uses the
+first five complete upload-free map windows, weighted by frame count. Evidence:
+`build/shadow-live/cmd-matched-{baseline-on,cache-on,cache-off}` and the initial
+`cmd-m1-no-validation` baseline; `build/map-perf/commands-matched.csv` holds the
+summary. The validation-off pair has identical polygons, batches and draws.
+
+| Per-frame measurement | Validation on: before -> after | Validation off: before -> after |
+| --- | ---: | ---: |
+| Observed FPS | 52.18 -> 98.26 | 158.28 -> 158.35 |
+| Observed frame interval | 19.166 -> 10.177 ms | 6.318 -> 6.315 ms |
+| Command recording interval | 12.654 -> 8.458 ms | 2.635 -> 2.450 ms |
+| Binding path | 7.210 -> 3.302 ms | 0.315 -> 0.133 ms |
+| Retention searches | 0.031 -> 0.031 ms | 0.029 -> 0.027 ms |
+| Geometry upload | 0.100 -> 0.096 ms | 0.089 -> 0.087 ms |
+| Queue submission | 0.593 -> 0.573 ms | 0.027 -> 0.028 ms |
+| Fence wait | 0.268 -> 0.264 ms | 0.002 -> 0.003 ms |
+| Acquire | 0.044 -> 0.041 ms | 0.002 -> 0.002 ms |
+| Present | 0.481 -> 0.487 ms | 3.396 -> 3.582 ms |
+| Actual screen draws | 1,034 -> 1,034 | 1,033 -> 1,033 |
+| Screen batches | 1,015 -> 1,015 | 1,014 -> 1,014 |
+| Settled GPU allocations | 0 -> 0 | 0 -> 0 |
+
+Important measurement limitation: wall-clock FPS is noisy, not the isolated
+cache gain. The validation-on baseline includes stalls outside the measured
+recording interval. Two additional validation-off baseline runs using fixed
+startup timing (`cmd-matched-baseline-off`, `cmd-repeat-baseline-off`) measured
+94.77 and 104.94 FPS, yet their recording intervals remained 2.588/2.725 ms and
+their broader record_ms remained 6.093/6.074 ms. Individual settled windows in
+those runs also reached about 158 FPS. Do not interpret those stalls, or the
+entire validation-on FPS difference, as work removed by the cache. Their source
+outside VulkanContext was not established; no unrelated scheduling change was
+made. The directly measured benefit is about 4.20 ms of recording with validation
+and 0.19 ms without it. Normal validation-off presentation already dominates the
+remaining binding work; no meaningful steady FPS increase is claimed there.
+
+Validation-on production state commands/frame (diagnostic triangle commands are
+not counted by these DrawMesh counters):
+
+| Command | Before | After |
+| --- | ---: | ---: |
+| Pipeline | 1,034 | 7 |
+| Texture descriptor pair | 1,034 | 1,030 |
+| Lighting descriptor + dynamic offset | 1,034 | 1 |
+| Vertex buffer + offset | 1,034 | 1,034 |
+| Index buffer + offset/type | 1,034 | 1,034 |
+| Viewport | 1,034 | 1 |
+| Scissor | 1,034 | 15 |
+| Push constants | 1,034 | 10 |
+| Total | 8,272 | 3,132 |
+
+This eliminates 5,140 commands/frame (62.1%) without eliminating a single draw
+in the matched pair. Texture/sampler transitions and transient geometry offsets
+really change and are deliberately still bound. Tutorial/radio overlays differ
+slightly between runs (11,836 vs 11,790 polygons in the validation-on pair);
+the off pair has 11,836 in both. The earlier 1,030..1,034 draw variation also
+occurred in the baseline. No batcher or draw-order code changed.
+
+Linear retention searches are only about 0.03 ms on the map and about 0.10 ms
+in the checked Take the Car/HMMWV gameplay windows. They do not justify another
+cache or ownership change. No additional hotspot optimization was retained or
+needed. Further map micro-optimization is not justified by validation-off results.
+
+### Live regression verification
+
+Current evidence is under `build/shadow-live/cmd-*`, separate from the previous
+batching milestone. All three gameplay missions used copied profiles with
+object/vehicle shadows enabled and unchanged stock GOG assets:
+
+- Infantry: movement and camera rotation, sights, firing (M16 30 -> 29), weapon
+  switching, two grenade throws (6 -> 4), visible explosion smoke/dust,
+  third-person animated geometry and projected shadow, map open/close/zoom/pan,
+  HUD fades, pause/resume, resize/minimize/restore and Mission Abort. Exit 0;
+  12,556 submissions, zero core/synchronization validation errors or warnings.
+- Take the Car: movement/rotation, aim/fire/reload input, foliage cutouts,
+  translucent tutorial/radio HUD, town/forest/road map, map transitions,
+  pause/resume and resize/restore. Normal exit 0; 3,498 submissions, zero issues.
+- HMMWV: third-person driving (position moved about 11 m), exhaust/dust, vehicle
+  and object shadows, map zoom/pan/open/close, pause/resume and resize/restore.
+  Normal exit 0; 3,632 submissions, zero issues.
+
+Default GL33-only Infantry gameplay and map were visually compared with Vulkan:
+terrain/roads/grid, unit markers, symbols, labels, translucent overlays and
+notebook/compass layers remained faithful at the inspected scales and areas.
+Zoom/pan/map close worked in GL33. No missing geometry, stale texture, incorrect
+ordering or new clipping/flicker was observed. These are bounded checks, not
+completed missions or exhaustive scene coverage. GPU execution was not timestamped.
+
+Normal Vulkan menu/animated intro and diagnostic triangle rendered and reached
+timed exit 0 with respectively 2,860 / 1,663 submissions and zero validation
+errors/warnings through destruction. Default GL33-only menu/intro also rendered
+and reached timed exit 0. The loader still reports the pre-existing stale EOS
+overlay manifest independently of the clean Khronos validation counters.
+Both build configurations pass; focused tests remain 32 cases/274 assertions ON,
+31/269 OFF, plus 114 driver-free guards. No GL33 rendering code, stock assets or
+localization changed: all 7,606 protected files retain count, length and timestamp.
+Original endpoint mute and Caps Lock state were preserved; no game remains open.
+
+The highest-value next visual-parity milestone is the pre-existing white
+water/shoreline artifact visible in Infantry, not further map command reduction.
