@@ -1360,3 +1360,41 @@ Evidence: `visual-lod-{vk,gl33}` and `visual-mip-gl33`. This is not MSAA coverag
 nor evidence for changing the global 192/255 cutoff. GL33's demand-residency
 policy remains outside this targeted lighting pass; anisotropy, AI88 precision
 and the previously corrected mip-tail bounds are untouched.
+
+### Sky texture interpolation and atmosphere
+
+Matched Infantry coast captures traced a further real mismatch to texture
+interpolation, not ClipLightSky/ClipFogSky or sunlight. GL33 uploads the stock
+sky interpolation in ARGB1555 using PacLevelMem's integer 255-weight RGB555
+arithmetic. Vulkan instead mixed expanded RGBA8 texels in floating point.
+This changed the texture's color steps/gradient through weather transitions.
+Vulkan now preserves source-format metadata and matches that packed arithmetic
+for the corresponding P8/1555/compressed source families. Other formats retain
+their existing path. A focused test compares the helper directly against
+PacLevelMem::Interpolate over representative channel values and weather factors.
+
+Importantly, GL33's CPU GetPixel/GetColor sky/fog calculation interpolates the
+source colors separately from its quantized GPU upload. Vulkan now retains
+those source references/factor too, so matching the visible texture does not
+quantize the scene's fog color. Existing image-version/frame-fence ownership,
+the 1/64 update tolerance, endpoint selection and single-level sky policy are
+unchanged. Stock files, sky geometry and weather animation are untouched.
+
+`visual-sky-{spec,packed,gl33}` compares before/after/reference at clear noon,
+partial-overcast sunset, full-overcast noon, foggy overcast dawn, clear night
+and a moon-facing night view. The fixed screen crop x=5..794, y=105..319 has
+mean absolute RGB error 1.984 -> 0.408 /255 at clear noon, 2.310 -> 1.965 at
+sunset and 0.718 -> 0.552 at night. These are screenshot observations, not a
+universal parity score; cloud movement and mission timing are not bit-identical.
+Full-overcast error barely changes (5.005 -> 4.974), as expected when the
+endpoint texture is used. Sky/horizon transitions, stars, moon, sun halo and
+fog remain present. The final Vulkan weather sweep closed normally with 3,507
+frames and zero core/synchronization validation errors/warnings. Both builds
+pass: 36 cases / 459 assertions ON, 35 / 454 OFF. No tracing remains.
+
+Cloud geometry/layers, CPU cloud color and alpha-fog handling already follow
+the engine; no new cloud system or global fog correction was justified.
+Atmospheric parity is partial: GL33 applies gamma after framebuffer composition,
+whereas Vulkan applies it per fragment before alpha blending. That remains a
+specific compositing difference for translucent clouds/effects at non-unit gamma,
+not evidence for altering original weather brightness or alpha thresholds.

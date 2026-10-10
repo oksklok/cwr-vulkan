@@ -4,9 +4,34 @@
 #include <PoseidonVK/ScreenGeometryVK.hpp>
 #include <PoseidonVK/ScreenPipelineVK.hpp>
 #include <PoseidonVK/ShapeLightingVK.hpp>
+#include <PoseidonVK/TextureInterpolationVK.hpp>
 #include <catch2/catch_approx.hpp>
 
 using namespace Poseidon;
+
+TEST_CASE("Vulkan sky interpolation matches legacy packed RGB555 uploads", "[Graphics][vulkan-shape]")
+{
+    REQUIRE(vk::InterpolatesRGB555(PacARGB1555));
+    REQUIRE(vk::InterpolatesRGB555(PacP8));
+    REQUIRE(vk::InterpolatesRGB555(PacDXT1));
+    REQUIRE_FALSE(vk::InterpolatesRGB555(PacAI88));
+    REQUIRE_FALSE(vk::InterpolatesRGB555(PacARGB8888));
+    PacLevelMem mip;
+    mip._w = mip._h = 2;
+    mip.SetDestFormat(PacARGB1555, 2);
+    for (int a : {0, 8, 64, 128, 248, 255})
+        for (int b : {0, 32, 192, 255})
+            for (float factor : {0.137931f, 0.5f, 0.655172f})
+            {
+                const uint16_t pa = uint16_t(0x8000 | ((a >> 3) << 10) | ((a >> 3) << 5) | (a >> 3));
+                const uint16_t pb = uint16_t(0x8000 | ((b >> 3) << 10) | ((b >> 3) << 5) | (b >> 3));
+                std::array<uint16_t, 4> first{pa, pa, pa, pa}, second{pb, pb, pb, pb};
+                mip.Interpolate(first.data(), second.data(), mip, factor);
+                REQUIRE(vk::InterpolateRGB555(a, b, int(std::floor(factor * 256))) ==
+                        ((first[0] & 31) * 255 + 15) / 31);
+                REQUIRE((first[0] & 0x8000) != 0);
+            }
+}
 
 TEST_CASE("Vulkan stock water separates secondary texture source from shader family", "[Graphics][vulkan-shape]")
 {

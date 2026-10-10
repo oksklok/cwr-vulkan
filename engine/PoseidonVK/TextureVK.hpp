@@ -35,8 +35,12 @@ class TextureVK final : public Texture
     void ReleaseImage() { _image.reset(); }
 
   private:
+    friend class TextBankVK;
     void RefreshMetadata();
     bool _dynamic = false;
+    PacFormat _sourceFormat = PacARGB8888;
+    Ref<Texture> _interpolateFirst, _interpolateSecond;
+    float _interpolateFactor = 0;
     DecodedImage _pixels;
     std::vector<DecodedImage> _lowerPixels;
     std::vector<PacLevelMem> _levels;

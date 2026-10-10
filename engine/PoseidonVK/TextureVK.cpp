@@ -1,4 +1,5 @@
 #include <PoseidonVK/TextureVK.hpp>
+#include <PoseidonVK/TextureInterpolationVK.hpp>
 #include <Poseidon/IO/Streams/QBStream.hpp>
 #include <Poseidon/Foundation/Logging/Logging.hpp>
 #include <algorithm>
@@ -26,6 +27,14 @@ TextureVK::TextureVK(RStringB name)
     const auto key = TextureKey(name);
     if (file.fail() || file.rest() == 0)
         throw std::runtime_error("Vulkan texture: cannot open " + key);
+    if (file.rest() >= 2)
+    {
+        const auto* bytes = reinterpret_cast<const uint8_t*>(file.act());
+        bool alpha = false;
+        _sourceFormat = PacFormatFromDesc(bytes[0] | (bytes[1] << 8), alpha);
+        if (_sourceFormat == PacFormatN)
+            _sourceFormat = key.ends_with(".paa") ? PacARGB4444 : PacP8;
+    }
     auto mips = DecodePAAMipChainBuffer(file.act(), file.rest(), key.ends_with(".paa"));
     if (mips.empty())
         throw std::runtime_error("Vulkan texture: existing PAA/PAC decoder failed for " + key);
@@ -104,6 +113,11 @@ Color TextureVK::GetPixel(int level, float u, float v) const
 {
     if (level < 0 || level >= ANMipmaps())
         throw std::out_of_range("Vulkan texture mip index");
+    // GL33's CPU sky/fog lookup blends source colors, NOT the quantized GPU
+    // upload. Keep that distinction when reproducing its packed interpolation.
+    if (_interpolateFirst && _interpolateSecond)
+        return _interpolateFirst->GetPixel(level, u, v) * (1 - _interpolateFactor) +
+               _interpolateSecond->GetPixel(level, u, v) * _interpolateFactor;
     const auto& pixels = level ? _lowerPixels[level - 1] : _pixels;
     // Match PacLevelMem::GetPixel's clamped CPU lookup. Scene samples (1,1)
     // for horizon/fog color; wrapping would incorrectly select the blue zenith.
@@ -166,6 +180,9 @@ Ref<Texture> TextBankVK::LoadInterpolated(RStringB first, RStringB second, float
         throw std::invalid_argument("Vulkan interpolation requires two textures");
     const auto& p = static_cast<TextureVK*>(a.GetRef())->Pixels();
     const auto& q = static_cast<TextureVK*>(b.GetRef())->Pixels();
+    const bool packed = vk::InterpolatesRGB555(static_cast<TextureVK*>(a.GetRef())->_sourceFormat) &&
+                        vk::InterpolatesRGB555(static_cast<TextureVK*>(b.GetRef())->_sourceFormat);
+    const int coefficient = std::clamp(int(std::floor(factor * 256)), 0, 255);
     std::vector<uint8_t> rgba(p.rgba.size());
     for (int y = 0; y < p.height; ++y)
         for (int x = 0; x < p.width; ++x)
@@ -173,13 +190,18 @@ Ref<Texture> TextBankVK::LoadInterpolated(RStringB first, RStringB second, float
             {
                 const size_t i = (size_t(y) * p.width + x) * 4 + c;
                 const size_t j = (size_t(y * q.height / p.height) * q.width + x * q.width / p.width) * 4 + c;
-                rgba[i] = uint8_t(std::lround(p.rgba[i] * (1 - factor) + q.rgba[j] * factor));
+                rgba[i] = packed ? (c == 3 ? 255 : vk::InterpolateRGB555(p.rgba[i], q.rgba[j], coefficient)) :
+                                   uint8_t(std::lround(p.rgba[i] * (1 - factor) + q.rgba[j] * factor));
             }
     if (found == _cache.end())
         found = _cache.emplace(key, new TextureVK(key.c_str(), p.width, p.height, rgba.data(), rgba.size())).first;
     else
         found->second->UpdateRGBA(rgba.data(), rgba.size());
     _interpolationFactors[key] = factor;
+    found->second->_interpolateFirst = a;
+    found->second->_interpolateSecond = b;
+    found->second->_interpolateFactor = factor;
+    found->second->_average = a->GetColor() * (1 - factor) + b->GetColor() * factor;
     return found->second.GetRef();
 }
 Texture* TextBankVK::CreateDynamic(int width, int height, const void* rgba, uint32_t size, bool mipmap)
