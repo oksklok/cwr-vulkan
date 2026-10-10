@@ -1814,7 +1814,7 @@ The four `mrak_war_{1,3,4,5}.paa` textures all use resident mip 0 in both paths
 `DoCloudLighting` supplies identical sunlight/accommodation, brightness and
 alpha, with SkyFog8 already attenuating vertex alpha. Both backend submissions
 use flags `0xac128`: ordinary source-alpha blending, no additional RGB fog,
-1/255 alpha cutoff and the original no-depth-write semantics. GL33's ordered
+1/255 alpha cutoff and the original disabled-depth semantics. GL33's ordered
 alpha queue and Vulkan's immediate software submissions preserve the same
 cloud order. No missing software attribute or cloud-specific shader is needed.
 
@@ -1863,18 +1863,22 @@ Vulkan retains the authored 256x256 base plus stored mip chain.
 In the gamma-1 town view, requesting mip 0 for the actual apple textures in GL33
 reduces the target-crown crop's mean RGB difference from 9.892 to 0.816 /255
 (x=210..489, y=165..399). The reference then shows the same finer leaf detail as
-Vulkan. The 12 m comparison is already close (0.730 /255 in its crown crop)
+Vulkan. The 12 m comparison is already close (0.778 /255, crop 180,102..619,499)
 because unmodified GL33 has loaded the full texture by then. No production
 residency override is retained, and Vulkan is not deliberately downgraded.
 
 The sweeps also cover 25 m, 65 m, reverse and side views, adjacent vegetation,
-town buildings, fence fronts/backs, low sun, night and fog. Some 25 m and side
-crown differences remain visible even after both paths have full residency
-(about 8.90 and 8.58 /255 in their respective crown crops). Both select the same
-target model LOD and section textures. These residuals are **not explained by
-the town-view residency result**; filtered cutout coverage still needs a
-strictly draw-matched investigation. Do not treat them as a confirmed Vulkan
-decoder bug or change a global cutoff to conceal them.
+town buildings, fence fronts/backs, low sun, night and fog. The 25 m crown still
+differs with full residency: 10.207 /255 in crop 280,170..519,409, using the
+later `foliage-target-vk` trace. Its side view is close, 0.493 /255 in crop
+270,160..549,439; the earlier Vulkan side capture was not comparably close.
+Sampled target traces show LOD 0 and matching section textures, but are not a
+per-capture-frame proof of identical geometry/state. Nearby trees also change
+LOD within the frozen-camera runs. These residuals are **not explained by the
+town-view residency result**, nor sufficiently repeatable to assign exclusively
+to filtering. A strictly draw-matched geometry/LOD and filtered-cutout comparison
+remains necessary. Do not call this a confirmed Vulkan decoder bug or change a
+global cutoff to conceal it.
 
 The existing opt-in stock-bank test now includes the four cloud textures and
 `jablon`, `jablon_renovace`, `n_strom_13` and `krovi6`. It checks authored mip
@@ -1898,3 +1902,58 @@ Both probe-free builds pass. Focused rendering/decoder tests pass 820 assertions
 in 37 cases with Vulkan enabled and 808 in 35 with Vulkan disabled; the expanded
 stock test passes 684 / 504 assertions respectively. The driver-free Vulkan
 policy suite passes 286 checks (including its intentional mock teardown error).
+
+### Probe-free gameplay and final verification (2026-10-11)
+
+The final binaries have no engine/shader differences from `24f691f`. Vulkan
+remains opt-in; GL33, stock resources and localization are unchanged. The
+retained implementation work is the focused extension of the existing stock
+test, not a visual compensation or new capture/streaming framework.
+
+On the RTX 4060 Ti with the isolated GOG 3.05 installation:
+
+| Run under `build/shadow-live/` | Gamma | Submitted frames | Exit | Core/sync findings through shutdown |
+| --- | ---: | ---: | ---: | --- |
+| `foliage-final-infantry` | 1.0 | 4566 | 0 | 0 errors, 0 warnings |
+| `foliage-final-hmmwv` | 1.6 | 2131 | 0 | 0 errors, 0 warnings |
+| `foliage-final-shadow` | 0.6 | 2196 | 0 | 0 errors, 0 warnings |
+| `foliage-final-shadow-bright` | 1.6 | 2041 | 0 | 0 errors, 0 warnings |
+| `foliage-final-shape-smoke` (timed exit) | default | 1677 | 0 | 0 errors, 0 warnings |
+
+The gameplay runs exercise bounded movement/camera input, firing/reload inputs,
+HUD/map and map zoom, pause/resume, 960x640 resize, minimize/restore and normal
+window-close teardown. Infantry's stock HandGrenade count decreases after a
+throw; this is not a claim of new SmokeShell or matched explosion coverage.
+HMMWV's position changes from (3105.91,6335.33) to (3078.48,6339.36), with vehicle,
+fence, bushes and building rendering inspected. Shadow Killer's gamma-0.6 view
+is too dark for useful foliage judgment; the extra gamma-1.6 run visibly verifies
+night vegetation, moon/stars and the green night-vision overlay. Map/briefing
+fonts and transparent HUD overlays remain intact. Coast/cloud, low-sun fence
+front/back, building and foliage screenshots from the matched sweeps supplement
+these live checks. No new shoreline, shadow or sky-interpolation defect was
+observed; exact filtering/coverage parity is not claimed.
+
+Both Vulkan-enabled and GL33-only RelWithDebInfo builds pass. Each starts the
+default GL33 menu without `--render` and exits 0 on its timer
+(`foliage-final-default-gl33-{on,off}`). Focused suites listed above pass in both
+configurations, including existing gamma, AI88, mip-bound, native-lighting and
+render-state policy coverage. The pre-existing missing Epic overlay JSON loader
+notice remains separate from Khronos findings; no system layer settings changed.
+
+There is no changed runtime rendering behavior to performance-benchmark in
+these commits: all phase/logging/residency experiments are removed. No new
+frame-time delta or speedup is claimed; the previous gamma baseline remains the
+relevant measured result. Gameplay profiling around input, map and resize events
+is not presented as steady-state GPU performance. Source comparison against
+`24f691f` confirms unchanged renderer, synchronization and command-state caching.
+
+Before/after metadata inventories (path, size, UTC modification ticks) match for
+all 7596 isolated stock files and 10 repository resource files. No unrelated
+working-tree edit was present at task start. Only this document and the existing
+stock test are retained changes; diagnostic captures remain ignored locally.
+
+Highest-value next milestone: isolate the remaining 25 m foliage difference
+using the exact captured draw's LOD, transformed geometry, UVs, alpha state and
+sampled mip. Establish repeatability before attributing it to anisotropic/BC1
+filtering or renderer semantics. Preserve Vulkan's full-resolution textures;
+neither texture streaming nor global alpha/color tuning is warranted.
