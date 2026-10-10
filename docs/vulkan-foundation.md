@@ -1,7 +1,9 @@
 # Vulkan backend development
 
 Current status: Vulkan remains opt-in, with gameplay lighting/fog, projected
-shadows and ordered screen batching. The latest measured Infantry map result is
+shadows, ordered screen batching and framebuffer-level gamma after complete
+scene/UI composition. Matched cloud/SmokeShell comparisons and the five-mission
+gamma verification are recorded at the end of this document. The measured Infantry map result is
 6.55 -> 47.49 FPS with 91.25% fewer screen draws. The dated milestones below are
 historical; their earlier unsupported-feature lists are superseded by later work.
 
@@ -1639,3 +1641,139 @@ Graphics gamma-slider test retain readable fonts and translucent overlays.
 No additional rendering change was justified by these matched comparisons;
 cloud/weather simulation, alpha thresholds, blend factors and stock assets
 remain untouched.
+
+### Final gameplay and regression verification
+
+The isolated GOG 3.05 installation, RTX 4060 Ti, copied profiles and exact-window
+bounded input helpers were reused. No game data, mission, model or texture was
+edited. Before/after inventories of 7596 stock-data files and 10 repository
+resource files match in path, size and modification time. Audio was disabled for
+these runs; audio parity is not claimed. The system-awake work lease did not
+keep the display awake or change the power plan.
+
+All five requested missions were exercised at gamma 1.6 with Khronos core and
+synchronization validation:
+
+| Evidence under build/shadow-live | Observed coverage | Submitted frames |
+| --- | --- | ---: |
+| gamma-play-infantry2 | Movement, views, HUD/map/zoom, pause/resume, resize/restore, real HandGrenade smoke and ground dust, Mission Abort | 4120 |
+| gamma-play-takecar2 | Movement, rifle fire/reload, HUD/map/zoom, pause/resume, resize/restore, normal close | 2092 |
+| gamma-play-hmmwv | Driving, exterior/interior, shadows, HUD/map/zoom, pause/resume, resize/restore, normal close | 2750 |
+| gamma-play-heavy | On-foot controls, existing M1 driver/interior/exterior, driving/exhaust/shadows, map, pause/resume, resize/restore, normal close | 3164 |
+| gamma-play-shadow | Movement/mouse look, firing/reload, night vision, HUD/map/zoom, pause/resume, resize/restore, Mission Abort | 2632 |
+
+Each completed with exit code 0 and zero validation warnings/errors through
+resource destruction. An abort/close can leave the final submitted frame
+unpresented; that is not a fence or validation failure. These are bounded
+gameplay checks, not complete mission playthroughs.
+
+Evidence was checked rather than inferred from input receipts: the initial
+keyboard fire attempt left ammunition unchanged and is not counted. Actual
+mouse fire in Take the Car changed M16 30 -> 29, then reload restored 30.
+Infantry's stock HandGrenade count changed 6 -> 5 and `grenade-effect-0.png`
+shows the dark explosion plume and pale ground dust. This is separate from
+the sustained SmokeShell coverage above. HMMWV's driving capture is partly
+occluded by foliage; Heavy Metal provides an unobstructed tank/exhaust view.
+One unprotected Take the Car run ended after the player was killed; it also
+shut down cleanly. The repeat and later scripted scenarios disabled player
+damage only in disposable runtime state, and Heavy Metal used the existing
+test harness to enter an existing M1. AI, weather simulation and stock missions
+were not rewritten.
+
+`gamma-fence-{vk,gl33}-16` repeats the road, town, sun/night/fog and opposite
+fence views. The reverse fence remains correctly visible with reference-like
+cutouts, and the low-sun material/shadow views retain their previous behavior.
+Vulkan closed after 3466 frames with zero findings. Residual foliage detail is
+still visible and is not attributed to the final gamma pass. The sky/coast,
+vehicle and map captures plus the existing focused tests cover packed sky
+interpolation/DXT1 rounding, the shoreline correction, AI88 precision, native
+material specular, anisotropic/mip policy, projected shadows, fonts and ordered
+screen batching/state-cache behavior without changing those implementations.
+
+`gamma-weather-live` resumes simulation and requests a ten-second overcast/fog
+transition at the coastal camera. Successive captures show the horizon becoming
+fogged while scene/cloud rendering continues; this is not a claim that the
+legacy cloud simulation finishes every layer transition in ten seconds.
+Normal close: 2334 frames, zero findings. The separately frozen heavy-overcast
+and dawn views above cover those completed visual states.
+
+Timed Vulkan menu, indexed-triangle and engine-Shape diagnostics
+(`gamma-{menu,triangle,shape}-vk`) exit 0 with 1472/1627/1687 frames and zero
+validation findings. Both `gamma-default-gl33-{on,off}` builds launch GL33
+without `--render`, render their menu and exit 0 on timeout. Vulkan remains
+opt-in. Both build targets and the focused suites pass as listed above; the
+final suite rerun again passes 286 driver-free checks, 820/808 Shape/decoder
+assertions and 265/173 stock-mip assertions. No GL33 source was changed.
+
+### Gamma performance and remaining limits
+
+`gamma-perf-{road,water}-{10,16}-{on,off}-{before,after}` contains 16 sequential
+RTX 4060 Ti runs at 800x600, with the same copied profile/VSync setting and
+existing camera sampler. The saved pre-change binary is `45a6033`, not a fresh
+checkout of `209657c`; its two retained follow-ups are repository documentation
+and DXT1 source-decoding rounding, not a different steady draw/gamma pipeline.
+The corrected binary SHA256 is
+`4FED6E00BB66A074D096E294E5E8C4C21722618EDCE15AC2DAA3DB0991E8BD4E`.
+
+As in the preceding baseline report, these are means of the first three complete
+two-second intervals with zero transient allocations and zero texture uploads.
+They exclude startup, not inconvenient frame times. All later intervals remain
+in the logs and were also inspected (including the last eight-window summaries).
+The road's mission/shadow/overlay work is not fully deterministic, so its
+confounded pairs are explicitly identified rather than interpreted as isolated
+gamma cost.
+
+| Scene | Gamma | Validation | Frame ms before -> after | CPU command ms before -> after |
+| --- | ---: | --- | --- | --- |
+| HMMWV road | 1.0 | On | 7.711 -> 8.485 | 6.458 -> 7.143 |
+| HMMWV road | 1.0 | Off | 6.303 -> 6.324 | 1.738 -> 1.781 |
+| HMMWV road | 1.6 | On | 8.157 -> 7.034 | 6.837 -> 5.936 |
+| HMMWV road | 1.6 | Off | 9.745 -> 6.326 | 1.594 -> 1.756 |
+| Infantry coast | 1.0 | On | 6.301 -> 6.311 | 2.003 -> 2.019 |
+| Infantry coast | 1.0 | Off | 6.316 -> 6.309 | 0.603 -> 0.613 |
+| Infantry coast | 1.6 | On | 6.312 -> 6.327 | 2.147 -> 2.212 |
+| Infantry coast | 1.6 | Off | 6.321 -> 6.308 | 0.599 -> 0.634 |
+
+The first road gamma-1 validation-on pair has 9 versus 80 screen batches, despite
+615 lit draws and 97/91 native/software shadows in both selected windows. At
+gamma 1.6 with validation, software shadows are 91 versus zero. The gamma-1.6
+validation-off baseline already contains application/frame-pacing gaps (its
+p95 frame interval is 6.197 ms despite the 9.745 ms average frame period).
+None of those three pairs establishes a gamma slowdown or speedup. Later
+windows in both binaries also show roughly 9-14 ms average frame periods while
+recording/p95 remain much lower, as in the preceding baseline work. These
+pre-existing pacing/workload differences were not changed in this task.
+
+The reverse-order gamma-1 road repeat (`gamma-perf-road-10-on-repeat-*`) runs
+the corrected executable first. Its selected windows have the same 615 lit
+draws and 97/91 native/software shadows, with 11 versus 10 screen batches:
+frame time 8.076 -> 8.081 ms, command recording 6.795 -> 6.805 ms and p95
+8.379 -> 8.402 ms (numbers are always before -> corrected). This much closer
+workload comparison does not reproduce the apparent 0.774 ms initial increase.
+The reverse-order gamma-1.6 validation-off road pair likewise measures
+6.325 -> 6.319 ms (command recording 1.865 -> 1.838 ms), with 615 lit draws,
+97/91 shadows and 6 versus 1 screen batches. All 20 performance runs, including
+these four repeats, close normally with zero core/synchronization findings
+where validation is enabled and zero settled transient allocations.
+
+The coast keeps 189 lit draws, zero shadows and one screen batch in all selected
+windows. Together with the validation-off gamma-1 road sample, it shows no
+meaningful ordinary steady-frame regression in the tested scenes. The small
+gamma-1 differences do not justify a direct-to-swapchain fast path: identity
+skips pow, and the single simple composition path is retained. These are
+presentation-limited measurements around 158 FPS, not uncapped GPU timing or
+claims about higher resolutions. No per-frame scene-target allocation occurs.
+
+Remaining limits: the full heavy-overcast gamma-1 residual is not yet explained;
+shifted cloud/particle phases and existing texture/LOD detail differences are
+not fixed by framebuffer gamma. The sRGB-only surface fallback remains untested
+on this UNORM display. The loader still reports the pre-existing missing Epic
+overlay JSON and notices for intentionally disabled implicit layers; these are
+separate from the zero Khronos core/synchronization findings. No renderer code
+or machine-wide layer configuration was changed to conceal them.
+
+The highest-value next parity milestone is a narrowly matched gamma-1 cloud
+layer investigation: record identical cloud phase, per-layer textures/mips and
+software vertex colors/fog before proposing any additional rendering change.
+Do not compensate for those differences with arbitrary opacity/color tuning or
+a new weather/particle system.
