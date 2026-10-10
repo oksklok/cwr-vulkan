@@ -402,7 +402,7 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     std::copy(mvp.begin(), mvp.end(), constants.begin());
     std::copy(color.begin(), color.end(), constants.begin() + 16);
     constants[20] = alphaCutoff;
-    constants[21] = 1 / _gamma;
+    // Offset 21 is retained as padding in the existing Shape push layout.
     constants[22] = detail ? secondaryMode : 0;
     constants[23] = shadow ? 1.f : 0.f;
     std::copy(lightDirection.begin(), lightDirection.end(), constants.begin() + 24);

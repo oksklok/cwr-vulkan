@@ -8,7 +8,7 @@ layout(location = 2) in float fogVisibility;
 layout(location = 3) in vec3 specularColor;
 layout(set = 0, binding = 0) uniform sampler2D diffuseTexture;
 layout(set = 1, binding = 0) uniform sampler2D detailTexture;
-layout(push_constant) uniform ShapeDraw { mat4 mvp; vec4 color; float alphaCutoff; float invGamma; float detailEnabled; vec4 lightDirection; } draw;
+layout(push_constant) uniform ShapeDraw { mat4 mvp; vec4 color; float alphaCutoff; float reserved; float detailEnabled; vec4 lightDirection; } draw;
 void main() {
     outColor = texture(diffuseTexture, texCoord) * draw.color * vertexColor;
     // Match GL33 TGDetail's 32x UV and PSDetail's alpha modulation.
@@ -24,5 +24,4 @@ void main() {
     float nightBlend = clamp(luminance + lighting.eyeCoef.a, 0.0, 1.0);
     outColor.rgb = mix(vec3(luminance), outColor.rgb, nightBlend);
     outColor.rgb = mix(lighting.fogColor.rgb, outColor.rgb, clamp(fogVisibility, 0.0, 1.0));
-    outColor.rgb = pow(max(outColor.rgb, vec3(0)), vec3(draw.invGamma));
 }

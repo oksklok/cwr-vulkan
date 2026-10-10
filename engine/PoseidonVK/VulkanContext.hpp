@@ -133,7 +133,8 @@ class VulkanContext
     VkExtent2D Extent() const { return _extent; }
     const std::string& DeviceName() const { return _deviceName; }
     unsigned ValidationErrors() const { return _validationErrors.load(); }
-    void SetGamma(float gamma) { if (_gamma != gamma) FlushScreenBatch(); _gamma = gamma; }
+    // Like GL33, the last setting applies to the complete finished framebuffer.
+    void SetGamma(float gamma) { _gamma = gamma; }
     float Gamma() const { return _gamma; }
     void SetFogColor(const std::array<float, 4>& color) { if (_fogColor != color) FlushScreenBatch(); _fogColor = color; }
     void SetNightEye(float night)
@@ -247,6 +248,23 @@ class VulkanContext
         VkImageView view = VK_NULL_HANDLE;
     };
     std::vector<DepthAttachment> _depth;
+    // Same format/extent as the swapchain: keep the existing blend/color-space
+    // behavior. Each acquired image owns its scene color and final-pass set.
+    struct GammaTarget
+    {
+        DepthAttachment color;
+        VkDescriptorSet set = VK_NULL_HANDLE;
+        VkFramebuffer framebuffer = VK_NULL_HANDLE;
+    };
+    std::vector<GammaTarget> _gammaTargets;
+    VkRenderPass _gammaPass = VK_NULL_HANDLE;
+    VkDescriptorPool _gammaPool = VK_NULL_HANDLE;
+    VkPipelineLayout _gammaLayout = VK_NULL_HANDLE;
+    VkPipeline _gammaPipeline = VK_NULL_HANDLE;
+    void CreateSceneColor(DepthAttachment& color, VkFormat format);
+    void CreateGammaPass(VkFormat format);
+    void DrawGammaPass();
+    void DestroyGammaResources() noexcept;
     VkFormat _depthFormat = VK_FORMAT_UNDEFINED;
     VkPipelineLayout _shapeLayout = VK_NULL_HANDLE;
     std::array<VkPipeline, 8> _shapePipelines{};

@@ -8,7 +8,7 @@ layout(location = 0) out vec2 texCoord;
 layout(location = 1) out vec4 vertexColor;
 layout(location = 2) out float fogVisibility;
 layout(location = 3) out vec3 specularColor;
-layout(push_constant) uniform ShapeDraw { mat4 mvp; vec4 color; float alphaCutoff; float invGamma; float detailEnabled; float shadow; } draw;
+layout(push_constant) uniform ShapeDraw { mat4 mvp; vec4 color; float alphaCutoff; float reserved; float detailEnabled; float shadow; } draw;
 void main() {
     gl_Position = draw.mvp * vec4(position, 1.0);
     texCoord = uv;

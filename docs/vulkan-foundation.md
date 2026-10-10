@@ -1537,3 +1537,51 @@ selection; a mouse throw consumed it and produced a visible white smoke plume.
 No stock mission or asset was edited. The run closed normally with 10512 frames,
 zero validation findings. Further matched smoke/HUD comparisons and corrected
 renderer results follow below; selection/eval success alone is not smoke coverage.
+
+### Framebuffer gamma implementation
+
+VulkanContext now owns one sampled scene-color image per swapchain image, with
+the same extent/format and the existing depth/stencil attachment. The original
+render pass still contains every native Shape, software TL draw, sky/water,
+cloud/particle, projected shadow and ordered screen/HUD batch. EndFrame flushes
+the last batch, ends that pass, then draws one fullscreen triangle into the
+acquired swapchain image. Its shader applies pow(max(rgb, 0), 1/gamma) once,
+after all ordinary alpha/additive blending and stencil shadow exclusion.
+The Shape fragment shader no longer performs gamma; its old push-constant slot
+is padding, so gamma changes no longer split batches or mutate scene constants.
+The latest gamma setting applies to the whole finished frame, as in GL33.
+
+Color-write to shader-read and prior-sample to next-color-write dependencies
+cover target reuse. Final rendering retains the acquire wait, per-image present
+semaphore and original frame-fence submission. The independent gamma layout
+invalidates the command-local scene cache. No scene ordering, blend factors,
+alpha thresholds, fog, material lighting, texture descriptors or asset lifetime
+changed. All added images, views, framebuffers, descriptor sets/pool, pipeline
+and layout are reused; idle-based swapchain recreation/shutdown owns cleanup,
+including partial initialization. No recurring frame allocations are added.
+
+The RTX surface remains B8G8R8A8_UNORM, so there is no automatic sRGB conversion
+in either pass. The sampled image uses the exact swapchain format rather than
+introducing an sRGB target. An sRGB-only surface retains its original blend
+space, with hardware decode on sampling and encode on final output; that
+fallback was not live-tested on this UNORM surface. Format/usage support is
+queried before creating each color image. Shaders target SPIR-V/Vulkan 1.0.
+Nearest/clamp sampling reuses the existing point sampler. Gamma 1 (including
+GL33's 0.999..1.001 tolerance) skips pow but retains the simple fullscreen pass;
+performance measurements below decide whether a second rendering path is needed.
+
+Both builds pass. Focused Shape/decoder checks pass 820 assertions / 37 cases ON,
+808 / 35 OFF; eight stock texture mip checks pass 265 / 173 assertions. The
+driver-free suite passes 286 checks, including latest-gamma constants, identity
+tolerance, acquired-image/full-extent selection, one final triangle/pass and
+scene-cache invalidation. Its intentional mocked teardown error is not a live
+validation failure.
+
+`gamma-after-vk-{10,06,16}` repeats all six matched sky views and additionally
+resizes to 960x640, minimizes/restores and closes normally. Respectively
+3780/3509/3854 submitted frames, zero Khronos core/synchronization warnings or
+errors through destruction. `gamma-live-update` changes the real Graphics UI
+slider 1.0 -> 1.6 -> 0.6 -> 1.0, including resize/restore at 0.6; the setting and
+whole-frame brightness update visibly without stale/black frames. Normal close:
+9095 frames, zero validation findings. GL33 drawing code remains untouched and
+Vulkan remains opt-in. Broader effect/gameplay/performance verification follows.

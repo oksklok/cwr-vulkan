@@ -4,7 +4,7 @@ if(NOT Vulkan_GLSLANG_VALIDATOR_EXECUTABLE)
     message(FATAL_ERROR "Vulkan shaders require glslangValidator from the installed Vulkan SDK")
 endif()
 set(VK_SHADER_HEADERS)
-foreach(kind triangle shape screen shadow)
+foreach(kind triangle shape screen shadow gamma)
     foreach(stage vert frag)
         if(kind STREQUAL "screen" AND stage STREQUAL "frag")
             continue() # Screen vertices reuse the diffuse fragment shader.
@@ -24,7 +24,7 @@ foreach(kind triangle shape screen shadow)
 endforeach()
 add_custom_target(PoseidonVKShaders DEPENDS ${VK_SHADER_HEADERS})
 
-add_library(PoseidonVK STATIC VulkanContext.cpp VulkanContext_Triangle.cpp VulkanContext_Mesh.cpp VulkanContext_Texture.cpp TextureVK.cpp BufferVK.cpp VertexBufferVK.cpp
+add_library(PoseidonVK STATIC VulkanContext.cpp VulkanContext_Gamma.cpp VulkanContext_Triangle.cpp VulkanContext_Mesh.cpp VulkanContext_Texture.cpp TextureVK.cpp BufferVK.cpp VertexBufferVK.cpp
     EngineVK.cpp EngineVK_Mesh.cpp EngineVK_2D.cpp EngineVK_Software.cpp EngineVK_Unsupported.cpp GraphicsBackendVK.cpp)
 add_dependencies(PoseidonVK PoseidonVKShaders)
 target_include_directories(PoseidonVK PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -40,7 +40,7 @@ endif()
 
 # Driver-free policy test: also builds directly with MSVC and SDK headers when
 # the full engine dependency toolchain is unavailable.
-add_executable(PoseidonVKPolicyTests VulkanContext.cpp VulkanContext_Triangle.cpp VulkanContext_Mesh.cpp VulkanContext_Texture.cpp BufferVK.cpp
+add_executable(PoseidonVKPolicyTests VulkanContext.cpp VulkanContext_Gamma.cpp VulkanContext_Triangle.cpp VulkanContext_Mesh.cpp VulkanContext_Texture.cpp BufferVK.cpp
     ${CMAKE_SOURCE_DIR}/tests/unit/engine/Poseidon/Graphics/test_vulkan_buffers.cpp
     ${CMAKE_SOURCE_DIR}/tests/unit/engine/Poseidon/Graphics/test_vulkan_commands.cpp
     ${CMAKE_SOURCE_DIR}/tests/unit/engine/Poseidon/Graphics/test_vulkan_policy.cpp)

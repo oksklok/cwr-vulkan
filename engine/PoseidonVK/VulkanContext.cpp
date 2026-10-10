@@ -363,6 +363,7 @@ void VulkanContext::DestroySwapchain() noexcept
     for (VkFramebuffer framebuffer : _framebuffers)
         vkDestroyFramebuffer(_device, framebuffer, nullptr);
     _framebuffers.clear();
+    DestroyGammaResources();
     for (auto& depth : _depth)
     {
         if (depth.view)
@@ -448,7 +449,7 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
     attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Every acquired image starts with a deterministic clear.
-    attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    attachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     _depthFormat = VK_FORMAT_UNDEFINED;
     for (auto candidate : {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT})
     {
@@ -479,29 +480,38 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &reference;
     subpass.pDepthStencilAttachment = &depthReference;
-    VkSubpassDependency dependency{};
+    VkSubpassDependency dependencies[2]{};
+    auto& dependency = dependencies[0];
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+    dependency.srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
                               VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     dependency.dstStageMask = dependency.srcStageMask;
-    dependency.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependency.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    // Make every scene blend/store visible to the final fullscreen sample.
+    dependencies[1].srcSubpass = 0;
+    dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     VkRenderPassCreateInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
     pass.attachmentCount = 2;
     pass.pAttachments = attachments;
     pass.subpassCount = 1;
     pass.pSubpasses = &subpass;
-    pass.dependencyCount = 1;
-    pass.pDependencies = &dependency;
+    pass.dependencyCount = 2;
+    pass.pDependencies = dependencies;
     Check(vkCreateRenderPass(_device, &pass, nullptr, &_renderPass), "create clear render pass");
-    Name(VK_OBJECT_TYPE_RENDER_PASS, ObjectHandle(_renderPass), "PoseidonVK clear to present pass");
+    Name(VK_OBJECT_TYPE_RENDER_PASS, ObjectHandle(_renderPass), "PoseidonVK scene composition pass");
 
     _views.reserve(_images.size());
     _framebuffers.reserve(_images.size());
     _rendered.reserve(_images.size());
     _depth.reserve(_images.size());
+    _gammaTargets.resize(_images.size());
     for (size_t i = 0; i < _images.size(); ++i)
     {
         VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
@@ -514,7 +524,8 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
         _views.push_back(imageView);
         _depth.emplace_back();
         CreateDepthAttachment(_depth.back());
-        const VkImageView attachmentViews[] = {imageView, _depth.back().view};
+        CreateSceneColor(_gammaTargets[i].color, format.format);
+        const VkImageView attachmentViews[] = {_gammaTargets[i].color.view, _depth.back().view};
         VkFramebufferCreateInfo framebuffer{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
         framebuffer.renderPass = _renderPass;
         framebuffer.attachmentCount = 2;
@@ -535,6 +546,7 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
         Name(VK_OBJECT_TYPE_FRAMEBUFFER, ObjectHandle(handle), (prefix + " framebuffer").c_str());
         Name(VK_OBJECT_TYPE_SEMAPHORE, ObjectHandle(rendered), (prefix + " present").c_str());
     }
+    CreateGammaPass(format.format);
     _recreate = false;
     std::fprintf(stderr, "Vulkan: swapchain #%u ready: %ux%u, %zu images, format=%d, present mode=%d\n",
                  ++_swapchainGeneration, _extent.width, _extent.height, _images.size(), format.format,
@@ -695,6 +707,7 @@ void VulkanContext::EndFrame()
         return;
     auto& frame = _frames[_frame];
     vkCmdEndRenderPass(frame.command);
+    DrawGammaPass();
     Check(vkEndCommandBuffer(frame.command), "end frame command buffer");
     if (_profile.enabled)
         _profile.commandMs += ProfileClock() - _profile.commandStart;
