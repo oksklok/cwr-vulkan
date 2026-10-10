@@ -809,3 +809,43 @@ follow below. `CWR_VK_SCREEN_BATCH=0` disables batching for process-local A/B
 profiling; the default is enabled. CWR_VK_PROFILE now distinguishes queued 2D
 polygons, emitted batches, all actual screen draws (including software geometry),
 and polygons per batch. Existing transient counts still count geometry uploads.
+
+### Real Infantry map comparison
+
+RTX 4060 Ti, 800x600, Khronos core/synchronization validation on, same executable
+and isolated profile, stock Infantry default map area/scale. Batching off/on
+used `CWR_VK_SCREEN_BATCH=0`/default. Simulation was stopped with the existing
+harness after loading for stationary map sampling; these are controlled map
+measurements, not mission playthroughs. Five consecutive settled two-second
+windows per run were retained before interaction/capture; frame-weighted results:
+
+| Metric | Batching off | Batching on |
+| --- | ---: | ---: |
+| Frame time / FPS | 152.72 ms / 6.55 | 21.06 ms / 47.49 |
+| Existing CPU recording interval | 133.51 ms | 14.13 ms |
+| Submitted 2D polygons/frame | 11,790 | 11,836 |
+| Actual Vulkan screen draws/frame | 11,809 | 1,033 |
+| Emitted 2D batches/frame | 11,790 | 1,014 |
+| Polygons/batch | 1.00 | 11.67 |
+| Transient allocations/frame | 0 | 0 |
+| Geometry upload time/frame | 0.345 ms | 0.105 ms |
+
+This is 7.25x measured FPS and 91.25% fewer screen draws. Small differences in
+radio/tutorial overlays account for the 0.39% polygon-count difference; map area,
+scale and geometry are matched. The existing record_ms interval includes
+fence/acquire/present waits: respectively 2.512/0.951/5.685 ms before and
+0.233/0.017/0.476 ms after. It is not a GPU timestamp or pure CPU-cycle metric.
+No texture uploads occurred in these sampled windows. Evidence:
+`build/shadow-live/map-m3-{off,on,gl33}` and `build/map-perf/m3-matched-samples.csv`.
+
+Default and zoomed Vulkan/GL33 captures were compared for terrain, roads, grid,
+tree/building symbols, unit markers, labels, notebook, compass and translucent
+overlays. Zooming, right-button panning, different areas and map open/close were
+exercised. No missing symbols, stale textures, incorrect order or clipping was
+observed. Both Vulkan runs closed with zero validation errors/warnings (680 and
+8,904 submitted frames). GL33-only default renderer also displayed the real map
+and closed normally. The map is now responsive; remaining cost is dominated by
+recording about 1,000 state-separated runs, not allocations or upload bandwidth.
+No additional localized hotspot was established that warranted expanding this
+change. Redundant command/state binding within those ordered runs is a useful
+next profiling target; sorting transparent polygons remains out of scope.
