@@ -1,6 +1,7 @@
 #include <PoseidonVK/EngineVK.hpp>
 #include <PoseidonVK/VertexBufferVK.hpp>
 #include <PoseidonVK/ShapeTransformVK.hpp>
+#include <PoseidonVK/ShapeLightingVK.hpp>
 #include <Poseidon/World/Scene/Scene.hpp>
 #include <Poseidon/World/Scene/Camera/Camera.hpp>
 #include <Poseidon/Graphics/Core/TLVertex.hpp>
@@ -19,10 +20,9 @@ void EngineVK::SetMaterial(const TLMaterial& mat, const LightList& lights, const
 {
     if (!_activeShape || !vk::SupportedShapeSpec(spec) || !vk::SupportedShapeSpec(render::SplitLegacy(mat.specFlags)))
         Unsupported("Shape material outside basic unlit diffuse");
-    _materialColor = {mat.diffuse.R() + mat.emmisive.R(), mat.diffuse.G() + mat.emmisive.G(),
-                      mat.diffuse.B() + mat.emmisive.B(), mat.diffuse.A()};
-    // This is explicitly an unlit diffuse/emissive approximation: no specular
-    // lobe is evaluated, including for stock glass materials.
+    _materialColor = {1, 1, 1, mat.diffuse.A()};
+    vk::ShapeMaterial(_lighting, mat, *GScene->MainLight(),
+                      _sunEnabled && !render::Has(spec.material, render::Material::DisableSun));
 }
 
 void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& spec)
@@ -66,8 +66,6 @@ void EngineVK::PrepareMeshTL(const LightList& lights, const Matrix4& modelToWorl
 {
     if (!GScene || !GScene->GetCamera())
         throw std::logic_error("Vulkan Shape: mesh preparation needs a scene camera");
-    // Deliberately unlit diffuse/emissive approximation. Engine light lists may
-    // be supplied, but no per-light or specular material system is evaluated.
     if (!vk::SupportedShapeSpec(spec))
     {
         LOG_ERROR(Graphics, "Vulkan TL mesh unsupported flags: 0x{:x}", render::MergeLegacy(spec));
@@ -76,6 +74,8 @@ void EngineVK::PrepareMeshTL(const LightList& lights, const Matrix4& modelToWorl
     const auto* camera = GScene->GetCamera();
     Matrix4 relative = modelToWorld;
     relative.SetPosition(modelToWorld.Position() - camera->Position());
+    vk::ShapeWorld(_lighting, relative);
+    _sunEnabled = !render::Has(spec.material, render::Material::DisableSun);
     Matrix4 view = camera->InverseScaled();
     view.SetPosition(VZero);
     _shapeModelView = view * relative;
@@ -123,7 +123,7 @@ void EngineVK::DrawSectionTL(const Shape& shape, int begin, int end)
         return; // Minimized drawable: no acquired image, but unsupported states above still fail.
     _vk.DrawMesh(buffer->Buffers(), range.begin, range.end - range.begin, sizeof(VertexIndex) == 2, _shapeMVP, color,
                  _sectionTexture, _sectionSampler, _sectionAlphaCutoff, _sectionBlend, false, true, nullptr,
-                 _sectionDetail, _secondaryMode, _bumpLight);
+                 _sectionDetail, _secondaryMode, _bumpLight, 0, 0, true, &_lighting);
 }
 
 void EngineVK::EndMeshTL(const Shape& shape)

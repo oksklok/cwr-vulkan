@@ -567,6 +567,9 @@ bool VulkanContext::BeginFrame(uint32_t width, uint32_t height)
     frame.transientPage = 0;
     for (auto& page : frame.transientPages)
         page.vertexUsed = page.indexUsed = 0;
+    frame.uniformPage = 0;
+    for (auto& page : frame.uniforms)
+        page.used = 0;
     const double retireEnd = _profile.enabled ? ProfileClock() : 0;
     if (_profile.enabled)
         _profile.retireMs += retireEnd - fenceEnd;
@@ -743,6 +746,9 @@ unsigned VulkanContext::Shutdown() noexcept
         if (_shapeLayout)
             vkDestroyPipelineLayout(_device, _shapeLayout, nullptr);
         _shapeLayout = VK_NULL_HANDLE;
+        if (_lightingLayout)
+            vkDestroyDescriptorSetLayout(_device, _lightingLayout, nullptr);
+        _lightingLayout = VK_NULL_HANDLE;
         if (_textureLayout)
             vkDestroyDescriptorSetLayout(_device, _textureLayout, nullptr);
         _textureLayout = VK_NULL_HANDLE;
@@ -754,6 +760,12 @@ unsigned VulkanContext::Shutdown() noexcept
         }
         for (auto& frame : _frames)
         {
+            for (auto& page : frame.uniforms)
+            {
+                if (page.pool)
+                    vkDestroyDescriptorPool(_device, page.pool, nullptr);
+                DestroyBuffer(_device, page.buffer);
+            }
             if (frame.acquired)
                 vkDestroySemaphore(_device, frame.acquired, nullptr);
             if (frame.submitted)

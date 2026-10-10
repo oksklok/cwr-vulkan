@@ -613,3 +613,14 @@ independent of blending: opaque depth-read-only screen pipelines have their
 own key. RTX Heavy Metal movement, firing/grenade, map/pause, resize/restore
 and close were inspected (`build/lighting-live/m1-baseline`), zero validation
 issues through shutdown. Shape state tests and policy CTest pass.
+
+Native Shapes now use GL33's sun Direction/Diffuse/Ambient and material
+ambient/diffuse/forcedDiffuse/emissive calculation, including DisableSun.
+Packed normals retain GL33's negation; inverse-transpose world normals handle
+rotation and nonuniform scale. Software TL colors are not lit again. Small
+mapped uniform pages are frame-fenced, retained and reused; no synchronous or
+per-section buffer allocation. Heavy Metal late-afternoon and Take the Car noon
+captures were inspected, with close/resize/restore and zero validation issues
+(2178/1236 submissions). A matched GL33 Heavy Metal capture has closely matching
+terrain, foliage and weapon brightness/colors. Seven focused cases/58 assertions
+and policy CTest pass. Evidence: `build/lighting-live/{m2-*,reference-heavy}`.

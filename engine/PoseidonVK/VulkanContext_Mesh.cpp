@@ -112,8 +112,17 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         const VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, 112};
         VkPipelineLayoutCreateInfo layout{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
         CreateTextureLayout();
-        const VkDescriptorSetLayout sets[] = {_textureLayout, _textureLayout};
-        layout.setLayoutCount = 2;
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(_physical, &properties);
+        _uniformAlignment = uint32_t(std::max<VkDeviceSize>(16, properties.limits.minUniformBufferOffsetAlignment));
+        const VkDescriptorSetLayoutBinding binding{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1,
+                                                   VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, nullptr};
+        VkDescriptorSetLayoutCreateInfo uniforms{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO};
+        uniforms.bindingCount = 1;
+        uniforms.pBindings = &binding;
+        Require(vkCreateDescriptorSetLayout(_device, &uniforms, nullptr, &_lightingLayout), "create lighting layout");
+        const VkDescriptorSetLayout sets[] = {_textureLayout, _textureLayout, _lightingLayout};
+        layout.setLayoutCount = 3;
         layout.pSetLayouts = sets;
         layout.pushConstantRangeCount = 1;
         layout.pPushConstantRanges = &push;
@@ -136,11 +145,11 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         stages[0].module = vertex;
         stages[1].module = fragment;
         stages[0].pName = stages[1].pName = "main";
-        // GL33 SVertex-compatible position/normal/UV packing. The unlit
-        // Shape shader consumes position and UV; 2D also carries vertex color.
+        // GL33 SVertex-compatible position/negated-normal/UV packing.
         const VkVertexInputBindingDescription binding{0, 8 * sizeof(float), VK_VERTEX_INPUT_RATE_VERTEX};
         const VkVertexInputAttributeDescription attributes[] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
-                                                                {1, 0, VK_FORMAT_R32G32_SFLOAT, 6 * sizeof(float)}};
+                                                                {1, 0, VK_FORMAT_R32G32_SFLOAT, 6 * sizeof(float)},
+                                                                {2, 0, VK_FORMAT_R32G32B32_SFLOAT, 3 * sizeof(float)}};
         const VkVertexInputBindingDescription screenBinding{0, 10 * sizeof(float), VK_VERTEX_INPUT_RATE_VERTEX};
         const VkVertexInputAttributeDescription screenAttributes[] = {
             {0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0},
@@ -149,7 +158,7 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         VkPipelineVertexInputStateCreateInfo input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         input.vertexBindingDescriptionCount = 1;
         input.pVertexBindingDescriptions = screen ? &screenBinding : &binding;
-        input.vertexAttributeDescriptionCount = screen ? 3 : 2;
+        input.vertexAttributeDescriptionCount = 3;
         input.pVertexAttributeDescriptions = screen ? screenAttributes : attributes;
         VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
         assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -195,10 +204,11 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         pipeline.pDynamicState = &dynamic;
         pipeline.layout = _shapeLayout;
         pipeline.renderPass = _renderPass;
-        Require(vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &pipeline, nullptr,
-                                          screen        ? &_screenPipelines[ScreenPipelineIndex(depthTest, translucent, depthWrite)]
-                                          : translucent ? &_blendPipeline
-                                                        : &_shapePipeline),
+        Require(vkCreateGraphicsPipelines(
+                    _device, VK_NULL_HANDLE, 1, &pipeline, nullptr,
+                    screen        ? &_screenPipelines[ScreenPipelineIndex(depthTest, translucent, depthWrite)]
+                    : translucent ? &_blendPipeline
+                                  : &_shapePipeline),
                 "create graphics pipeline");
     }
     catch (...)
@@ -221,7 +231,7 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
                              bool blend, bool screen, bool depthTest, const VkRect2D* clip,
                              const std::shared_ptr<TextureImage>& detail, float secondaryMode,
                              const std::array<float, 3>& lightDirection, VkDeviceSize vertexOffset,
-                             VkDeviceSize indexOffset, bool depthWrite)
+                             VkDeviceSize indexOffset, bool depthWrite, const ShapeLighting* lighting)
 {
     if (!_frameOpen || !mesh || mesh->device != _device || !mesh->vertices.buffer || !mesh->indices.buffer)
         throw std::logic_error("Vulkan Shape: indexed draw needs an open frame and live buffers from this device");
@@ -248,6 +258,8 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
                              : _shapePipeline;
     if (!pipeline)
         CreateShapePipeline(blend, screen, depthTest, depthWrite);
+    if (lighting)
+        BindLighting(*lighting);
     auto& frame = _frames[_frame];
     // Retain each mesh once per frame until that frame's submission fence completes.
     if (std::find(frame.meshes.begin(), frame.meshes.end(), mesh) == frame.meshes.end())
@@ -282,6 +294,51 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
         std::fprintf(stderr, "Vulkan: first production %s draw: firstIndex=%u count=%u\n", screen ? "2D" : "Shape",
                      firstIndex, count);
         _loggedShape = true;
+    }
+}
+
+void VulkanContext::BindLighting(const ShapeLighting& lighting)
+{
+    auto& frame = _frames[_frame];
+    for (;; ++frame.uniformPage)
+    {
+        if (frame.uniformPage == frame.uniforms.size())
+        {
+            // Frame-fenced mapped pages: append on overflow, never overwrite a
+            // recorded draw. No per-section allocation or synchronous upload.
+            auto& page = frame.uniforms.emplace_back();
+            Require(CreateHostVisibleBuffer(_physical, _device, 1024 * 1024, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                                            page.buffer),
+                    "allocate lighting page");
+            const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1};
+            VkDescriptorPoolCreateInfo pool{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
+            pool.maxSets = pool.poolSizeCount = 1;
+            pool.pPoolSizes = &size;
+            Require(vkCreateDescriptorPool(_device, &pool, nullptr, &page.pool), "create lighting pool");
+            VkDescriptorSetAllocateInfo allocation{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+            allocation.descriptorPool = page.pool;
+            allocation.descriptorSetCount = 1;
+            allocation.pSetLayouts = &_lightingLayout;
+            Require(vkAllocateDescriptorSets(_device, &allocation, &page.set), "allocate lighting set");
+            const VkDescriptorBufferInfo buffer{page.buffer.buffer, 0, sizeof(ShapeLighting)};
+            VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            write.dstSet = page.set;
+            write.descriptorCount = 1;
+            write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+            write.pBufferInfo = &buffer;
+            vkUpdateDescriptorSets(_device, 1, &write, 0, nullptr);
+            if (_profile.enabled)
+                ++_profile.allocations;
+        }
+        auto& page = frame.uniforms[frame.uniformPage];
+        const uint32_t offset = (page.used + _uniformAlignment - 1) & ~(_uniformAlignment - 1);
+        if (offset + sizeof(lighting) > page.buffer.size)
+            continue;
+        UploadMappedBuffer(page.buffer, &lighting, sizeof(lighting), offset);
+        page.used = offset + sizeof(lighting);
+        vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 2, 1, &page.set, 1,
+                                &offset);
+        return;
     }
 }
 

@@ -127,6 +127,8 @@ class EngineVK final : public Engine
     bool _meshPrepared = false;
     int _bias = 0;
     Matrix4 _shapeModelView;
+    vk::ShapeLighting _lighting;
+    bool _sunEnabled = true;
     const Shape* _activeShape = nullptr;
     std::array<float, 16> _shapeMVP{};
     std::array<float, 4> _shapeColor{1, 1, 1, 1};

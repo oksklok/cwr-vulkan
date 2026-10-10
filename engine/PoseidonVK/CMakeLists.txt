@@ -14,7 +14,8 @@ foreach(kind triangle shape screen)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated/PoseidonVK/Shaders"
             COMMAND "${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}" -V --target-env vulkan1.0
                 --vn "Cwr${kind}_${stage}" -o "${header}" "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/${kind}.${stage}"
-            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/${kind}.${stage}" VERBATIM)
+            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/${kind}.${stage}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/shape_uniforms.glsl" VERBATIM)
         list(APPEND VK_SHADER_HEADERS "${header}")
     endforeach()
 endforeach()

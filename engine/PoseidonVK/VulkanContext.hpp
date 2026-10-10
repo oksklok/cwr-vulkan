@@ -2,6 +2,7 @@
 
 #include <PoseidonVK/SwapchainPolicy.hpp>
 #include <PoseidonVK/BufferVK.hpp>
+#include <PoseidonVK/ShapeLightingData.hpp>
 #include <array>
 #include <atomic>
 #include <string>
@@ -78,7 +79,7 @@ class VulkanContext
                   bool blend = false, bool screen = false, bool depthTest = true, const VkRect2D* clip = nullptr,
                   const std::shared_ptr<TextureImage>& detail = {}, float secondaryMode = 1,
                   const std::array<float, 3>& lightDirection = {0, -1, 0}, VkDeviceSize vertexOffset = 0,
-                  VkDeviceSize indexOffset = 0, bool depthWrite = true);
+                  VkDeviceSize indexOffset = 0, bool depthWrite = true, const ShapeLighting* lighting = nullptr);
     void EndFrame();
     bool FrameOpen() const { return _frameOpen; }
     VkExtent2D Extent() const { return _extent; }
@@ -116,6 +117,15 @@ class VulkanContext
         std::vector<std::shared_ptr<TextureImage>> textures;
         std::vector<TransientPage> transientPages;
         size_t transientPage = 0;
+        struct UniformPage
+        {
+            BufferVK buffer;
+            VkDescriptorPool pool = VK_NULL_HANDLE;
+            VkDescriptorSet set = VK_NULL_HANDLE;
+            uint32_t used = 0;
+        };
+        std::vector<UniformPage> uniforms;
+        size_t uniformPage = 0;
     };
     static constexpr size_t FramesInFlight = 2;
     VkInstance _instance = VK_NULL_HANDLE;
@@ -131,6 +141,9 @@ class VulkanContext
     std::vector<std::weak_ptr<TextureImage>> _textures;
     std::shared_ptr<TextureImage> _whiteTexture;
     VkDescriptorSetLayout _textureLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout _lightingLayout = VK_NULL_HANDLE;
+    uint32_t _uniformAlignment = 16;
+    void BindLighting(const ShapeLighting& lighting);
     std::array<VkSampler, 8> _textureSamplers{};
     void CreateTextureLayout();
     VkSwapchainKHR _swapchain = VK_NULL_HANDLE;

@@ -3,9 +3,42 @@
 #include <PoseidonVK/ShapeTransformVK.hpp>
 #include <PoseidonVK/ScreenGeometryVK.hpp>
 #include <PoseidonVK/ScreenPipelineVK.hpp>
+#include <PoseidonVK/ShapeLightingVK.hpp>
 #include <catch2/catch_approx.hpp>
 
 using namespace Poseidon;
+
+TEST_CASE("Vulkan native normals use inverse transpose and materials use the engine sun", "[Graphics][vulkan-shape]")
+{
+    Matrix4 model(MIdentity);
+    model.SetScale(2, 3, 4);
+    model.SetOrientation(Matrix3(MRotationY, 0.7f) * model.Orientation());
+    model.SetPosition(Vector3(7, 8, 9));
+    vk::ShapeLighting lighting;
+    vk::ShapeWorld(lighting, model);
+    const Vector3 normal(1, 1, 0), tangent(1, -1, 0);
+    Vector3 transformed;
+    for (int row = 0; row < 3; ++row)
+        transformed[row] = lighting.normal[row] * normal.X() + lighting.normal[4 + row] * normal.Y() + lighting.normal[8 + row] * normal.Z();
+    REQUIRE(transformed * model.Rotate(tangent) == Catch::Approx(0).margin(1e-5));
+    REQUIRE(lighting.world[12] == 7);
+    LightSun sun;
+    sun.SetDiffuse(Color(0.2f, 0.4f, 0.6f));
+    TLMaterial material;
+    material.ambient = Color(0.5f, 0.5f, 0.5f);
+    material.diffuse = Color(0.5f, 0.25f, 1);
+    material.forcedDiffuse = Color(0.1f, 0.2f, 0.3f);
+    material.emmisive = Color(0.1f, 0.2f, 0.3f);
+    vk::ShapeMaterial(lighting, material, sun, true);
+    REQUIRE(lighting.diffuse[1] == Catch::Approx(0.1f));
+    REQUIRE(lighting.ambient[2] == Catch::Approx(sun.Ambient().B() * 0.5f + 0.18f));
+    REQUIRE(lighting.emissive[0] == Catch::Approx(0.1f));
+    REQUIRE(lighting.ambient[3] == 1);
+    vk::ShapeMaterial(lighting, material, sun, false);
+    REQUIRE(lighting.ambient[3] == 0);
+    REQUIRE(lighting.emissive[0] == Catch::Approx(0.1f));
+    REQUIRE(sizeof(vk::ShapeLighting) == 176);
+}
 
 TEST_CASE("Vulkan screen pipeline keys keep every depth blend combination independent", "[Graphics][vulkan-shape]")
 {
