@@ -9,6 +9,7 @@
 #include <initializer_list>
 #include <string>
 #include <vector>
+#include <cstdlib>
 
 namespace ui = Poseidon::ui;
 
@@ -167,6 +168,34 @@ TEST_CASE("FontRenderer: shipped mono font covers Russian glyphs", "[ui][font]")
     REQUIRE(russian->height > 0);
     // Missing glyph fallback should not alias to the same cached Latin glyph.
     CHECK(russian != latin);
+}
+
+TEST_CASE("FontRenderer: installed fallback fills missing glyphs without replacing Latin metrics", "[ui][font]")
+{
+#if defined(_WIN32)
+    const char* windows = std::getenv("WINDIR");
+    if (!windows)
+        SKIP("Windows font directory unavailable");
+    const std::string path = std::string(windows) + "/Fonts/msyh.ttc";
+    ui::FontRenderer direct, primary;
+    if (!direct.LoadFont(path))
+        SKIP("Optional installed CJK face unavailable");
+    REQUIRE(primary.LoadFont(GetTestMonoFont()));
+    const auto latin = *primary.GetGlyph('A', 24);
+    REQUIRE(primary.LoadFallbackFont(path));
+    const auto* afterLatin = primary.GetGlyph('A', 24);
+    REQUIRE(afterLatin->advance == latin.advance);
+    REQUIRE(afterLatin->width == latin.width);
+    const auto* han = primary.GetGlyph(0x4e2d, 24);
+    const auto* expected = direct.GetGlyph(0x4e2d, 24);
+    REQUIRE(han != nullptr);
+    REQUIRE(han->width == expected->width);
+    REQUIRE(han->advance == expected->advance);
+    REQUIRE(han->height > 0);
+    REQUIRE(primary.LayoutText("A\xe4\xb8\xad", 0, 24, 24).size() == 2);
+#else
+    SKIP("Optional Windows system face check");
+#endif
 }
 
 TEST_CASE("FontRenderer: atlas pixel data", "[ui][font]")

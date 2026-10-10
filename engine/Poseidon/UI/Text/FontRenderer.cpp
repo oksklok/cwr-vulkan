@@ -43,10 +43,24 @@ FontRenderer::FontRenderer()
 
 FontRenderer::~FontRenderer()
 {
+    if (_fallbackFace)
+        ::FT_Done_Face(_fallbackFace);
     if (_face)
         ::FT_Done_Face(_face);
     if (_library)
         ::FT_Done_FreeType(_library);
+}
+
+bool FontRenderer::LoadFallbackFont(const std::string& path)
+{
+    FT_Face face = nullptr;
+    if (::FT_New_Face(_library, path.c_str(), 0, &face) != 0)
+        return false;
+    if (_fallbackFace)
+        ::FT_Done_Face(_fallbackFace);
+    _fallbackFace = face;
+    _glyphCache.clear();
+    return true;
 }
 
 void FontRenderer::SetSyntheticOblique(bool enable)
@@ -127,17 +141,27 @@ const GlyphMetrics* FontRenderer::RasterizeGlyph(uint32_t codepoint, int pixelSi
     if (!_face)
         return nullptr;
 
-    ::FT_Set_Pixel_Sizes(_face, 0, static_cast<FT_UInt>(pixelSize));
-    FT_UInt glyphIndex = ::FT_Get_Char_Index(_face, codepoint);
+    FT_Face face = _face;
+    FT_UInt glyphIndex = ::FT_Get_Char_Index(face, codepoint);
+    if (glyphIndex == 0 && _fallbackFace)
+    {
+        const auto fallback = ::FT_Get_Char_Index(_fallbackFace, codepoint);
+        if (fallback)
+        {
+            face = _fallbackFace;
+            glyphIndex = fallback;
+        }
+    }
+    ::FT_Set_Pixel_Sizes(face, 0, static_cast<FT_UInt>(pixelSize));
     if (glyphIndex == 0 && codepoint != 0)
         glyphIndex = ::FT_Get_Char_Index(_face, 0xFFFD);
 
     // TARGET_LIGHT: vertical-only grid fit preserves horizontal outline metrics.
     // NORMAL's 2-axis snap ghosts the top strokes of condensed display faces.
-    if (::FT_Load_Glyph(_face, glyphIndex, FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_LIGHT) != 0)
+    if (::FT_Load_Glyph(face, glyphIndex, FT_LOAD_FORCE_AUTOHINT | FT_LOAD_TARGET_LIGHT) != 0)
         return nullptr;
 
-    FT_GlyphSlot slot = _face->glyph;
+    FT_GlyphSlot slot = face->glyph;
     bool hasOutline = slot->format == FT_GLYPH_FORMAT_OUTLINE && slot->outline.n_points > 0;
     if (hasOutline)
     {

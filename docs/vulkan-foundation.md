@@ -558,6 +558,49 @@ fence resets cursors; overflow adds a page without replacing recorded buffers.
 Immutable P3D allocations are unchanged. Offset-copy guards add two focused checks
 (policy total 87). Sustained intro before/after captures, mission movement, resize,
 restore, close and timed exit were inspected with zero validation issues. The
-first requested 60-second stationary mission ended naturally after about 30 s;
+first requested 60-second stationary mission exited cleanly after about 30 s
+(reason not established);
 it supplied profiling but did not pass that duration gate. A 40-second sustained
 intro and a 25-second timed mission passed separately. Evidence: `profile-*`.
+
+## Gameplay effects and integration (2026-10-10)
+
+Real firing exposed unsupported transformed 3D lines and projected decals.
+Both now reuse the existing textured-quad path, retaining engine colors, UVs,
+reciprocal-W and depth. Lines match GL33's three-pixel ribbon; billboards use
+GPU clipping. Screen polygons select opaque/cutout/blended state from the
+texture and section flags rather than always blending. Weather can restrict
+a stored sky chain to its finest level; old images remain fence-owned.
+Bank-backed mip-limit regression checks cover five real textures.
+Blended billboards reject only near-zero alpha, preserving alpha-fog fades.
+
+The radio replacement glyphs were valid localized UTF-8, not a Vulkan encoding
+error. On Windows, missing glyphs may use the installed Microsoft YaHei face
+through the existing FreeType atlas. Latin metrics remain unchanged; no fonts,
+localization or game assets were edited.
+
+RTX 4060 Ti normal Vulkan startup and stock Take the Car, Infantry and Heavy
+Metal were exercised with exact-window input: movement/rotation, optics,
+firing, weapon mode/grenade selection, reload input, map and pause/resume.
+Take the Car ammunition decreased; Heavy Metal grenade count fell 6 to 5 and
+its explosion dust/smoke billboards were visually inspected. Infantry and
+Heavy Metal each passed a 60-second sustained interval, resize/minimize/restore
+and normal close, with 10211/6598 submitted frames and zero Khronos core or
+synchronization validation errors/warnings through shutdown. Settled intervals
+were about 7.5 ms / 133 FPS and 12.5 ms / 80 FPS respectively, validation on;
+these are sampled scenes, not whole-mission benchmarks. Evidence is under
+`build/gameplay-live/{takecar-effects-decals,infantry-effects,heavy-metal-sky-fixed}`.
+
+Final checks: Infantry pause-menu Abort was selected with keyboard input and
+exited cleanly (3148 submissions); a final Heavy Metal grenade/resize/restore
+run reached its 70-second timed exit (5860 submissions), both zero validation
+issues. Normal Vulkan menu/intro timed exit passed too. Both build configurations
+pass 49 focused cases (ON 4745 / OFF 4700 assertions) and Vulkan policy CTest.
+Default GL33 visibly launched the stock menu in both executables and closed
+normally. Stock-data/resource file counts, bytes and metadata hashes are unchanged.
+Final evidence: `infantry-abort-final`, `heavy-metal-alpha-final`, `final-*`.
+
+Native Shapes still use approximate unlit diffuse/emissive color and no native
+distance fog; shadows, points and full material/effect parity are not implemented.
+No campaign or complete mission was finished. The highest-value next rendering
+milestone is native Shape lighting/fog using the existing engine inputs.

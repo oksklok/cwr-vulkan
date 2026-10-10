@@ -1,4 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
+#include <BuildConfig.h>
+#if CWR_HAS_VULKAN
+#include <PoseidonVK/TextureVK.hpp>
+#endif
 #include <catch2/catch_approx.hpp>
 #include <fstream>
 #include <iterator>
@@ -91,6 +95,20 @@ TEST_CASE("PAADecoder: stock bank mip chains agree with the existing top decoder
             REQUIRE(chain[i].height == std::max(1, chain[i - 1].height / 2));
             REQUIRE(chain[i].rgba.size() == size_t(chain[i].width * chain[i].height * 4));
         }
+#if CWR_HAS_VULKAN
+        // Weather restricts a stored sky chain to its top level. Exercise the
+        // same contract without a GPU; invalid growth must not invent mips.
+        TextureVK texture(name);
+        REQUIRE(texture.ANMipmaps() == chain.size());
+        REQUIRE_NOTHROW(texture.ASetNMipmaps(2));
+        REQUIRE(texture.AHeight(1) == chain[1].height);
+        REQUIRE_NOTHROW(texture.ASetNMipmaps(1));
+        REQUIRE(texture.ANMipmaps() == 1);
+        REQUIRE(texture.Pixels().rgba == top.rgba);
+        REQUIRE_NOTHROW(texture.ASetNMipmaps(1));
+        REQUIRE_THROWS_AS(texture.ASetNMipmaps(0), std::out_of_range);
+        REQUIRE_THROWS_AS(texture.ASetNMipmaps(2), std::out_of_range);
+#endif
     }
 }
 

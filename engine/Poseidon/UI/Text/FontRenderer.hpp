@@ -98,6 +98,10 @@ class FontRenderer
 
     bool LoadFontFromMemory(const uint8_t* data, size_t size);
 
+    // One optional face for characters absent from the primary font. Both use
+    // the existing atlas, layout and texture path; supported primary glyphs stay unchanged.
+    bool LoadFallbackFont(const std::string& path);
+
     // Apply a permanent 15-degree shear to subsequent glyph rasterizations.
     // Used to synthesize italic from fonts that ship only an upright cut
     // (e.g. AudreysHand).
@@ -147,6 +151,7 @@ class FontRenderer
 
     FT_LibraryRec_* _library = nullptr;
     FT_FaceRec_* _face = nullptr;
+    FT_FaceRec_* _fallbackFace = nullptr;
     std::vector<uint8_t> _fontData; // kept alive for FreeType memory fonts
 
     std::vector<AtlasPage> _pages;

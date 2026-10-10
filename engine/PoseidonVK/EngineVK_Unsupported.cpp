@@ -11,14 +11,6 @@ namespace Poseidon
                            " is not implemented; use --render gl33 for game rendering");
 }
 
-void EngineVK::DrawDecal(Vector3Par, float, float, float, PackedColor, const MipInfo&, int)
-{
-    Unsupported("decals");
-}
-void EngineVK::DrawLine(int, int)
-{
-    Unsupported("3D lines");
-}
 void EngineVK::DrawPoints(int, int)
 {
     Unsupported("points");

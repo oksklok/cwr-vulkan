@@ -82,8 +82,15 @@ int TextureVK::AHeight(int level) const
 }
 void TextureVK::ASetNMipmaps(int n)
 {
-    if (n != ANMipmaps())
-        throw std::logic_error("Vulkan texture mip-chain mutation is unsupported");
+    if (n < 1 || n > ANMipmaps())
+        throw std::out_of_range("Vulkan texture mip limit exceeds the stored chain");
+    if (n == ANMipmaps())
+        return;
+    // Weather requests only the finest sky level. Restrict the stored chain
+    // rather than generating pixels; referencing frames retain the old image.
+    _lowerPixels.resize(n - 1);
+    _levels.resize(n);
+    _image.reset();
 }
 AbstractMipmapLevel& TextureVK::AMipmap(int level)
 {

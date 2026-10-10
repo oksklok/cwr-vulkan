@@ -266,6 +266,12 @@ static ui::FontRenderer* GetOrCreateRenderer(const char* ttfPath, bool synthetic
     auto renderer = std::make_unique<ui::FontRenderer>();
     if (!renderer->LoadFontFromStream(stream))
         return nullptr;
+#if defined(_WIN32)
+    // Preserve localized UTF-8 mission text when the shipped Latin/Cyrillic face
+    // lacks CJK glyphs. Use an installed system face; no game/resource file changes.
+    if (const char* windows = std::getenv("WINDIR"))
+        renderer->LoadFallbackFont(std::string(windows) + "\\Fonts\\msyh.ttc");
+#endif
     renderer->SetSyntheticOblique(syntheticOblique);
     renderer->SetSyntheticBold(syntheticBold);
 
