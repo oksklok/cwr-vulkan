@@ -49,6 +49,8 @@ void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& s
         }
     }
     _sectionSampler = vk::ShapeSampler(spec);
+    vk::ShapeFog(_lighting, GScene->GetFogMinRange(), GScene->GetFogMaxRange(), _fogColor,
+                 _shapeFog && !render::Has(spec.routing, render::Routing::FogDisabled | render::Routing::NoDropdown));
     _sectionAlphaCutoff = 0;
     _sectionBlend = _materialColor[3] < 1 || _shapeColor[3] < 1;
     if (mip._texture)
@@ -76,6 +78,7 @@ void EngineVK::PrepareMeshTL(const LightList& lights, const Matrix4& modelToWorl
     relative.SetPosition(modelToWorld.Position() - camera->Position());
     vk::ShapeWorld(_lighting, relative);
     _sunEnabled = !render::Has(spec.material, render::Material::DisableSun);
+    _shapeFog = (spec.routing & (render::Routing::FogDisabled | render::Routing::NoDropdown)) == render::Routing::None;
     Matrix4 view = camera->InverseScaled();
     view.SetPosition(VZero);
     _shapeModelView = view * relative;

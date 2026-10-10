@@ -624,3 +624,15 @@ captures were inspected, with close/resize/restore and zero validation issues
 (2178/1236 submissions). A matched GL33 Heavy Metal capture has closely matching
 terrain, foliage and weapon brightness/colors. Seven focused cases/58 assertions
 and policy CTest pass. Evidence: `build/lighting-live/{m2-*,reference-heavy}`.
+
+Native distance fog now uses the scene's weather/view-distance start/end range
+and current fog color, with camera-relative distance and FogDisabled/NoDropdown
+honored. Software TL carries its existing Fog8 visibility instead of recomputing
+distance; IsAlphaFog effects retain their existing opacity fade, without a second
+RGB fog mix. HUD/ordinary 2D remain unfogged. Shared fragment fog is applied before
+gamma. Separate native/screen constant caches reuse frame-fenced uniform slices.
+Ninjas dawn/fog gameplay and Convoy's distant hills, trees, road and vehicle cab
+were inspected on RTX, with resize/minimize/restore and clean close (1594 and
+692 submissions, zero validation issues). Ninjas GL33 reference brightness and
+colors remain close. Eight focused cases/66 assertions and policy CTest pass.
+Evidence: `build/lighting-live/{m3-fog,m3-convoy,reference-fog}`.

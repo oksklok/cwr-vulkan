@@ -5,4 +5,6 @@ layout(set = 2, binding = 0, std140) uniform ShapeLighting {
     vec4 ambient;
     vec4 diffuse;
     vec4 emissive;
+    vec4 fogParams;
+    vec4 fogColor;
 } lighting;

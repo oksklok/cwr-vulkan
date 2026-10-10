@@ -150,15 +150,16 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         const VkVertexInputAttributeDescription attributes[] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
                                                                 {1, 0, VK_FORMAT_R32G32_SFLOAT, 6 * sizeof(float)},
                                                                 {2, 0, VK_FORMAT_R32G32B32_SFLOAT, 3 * sizeof(float)}};
-        const VkVertexInputBindingDescription screenBinding{0, 10 * sizeof(float), VK_VERTEX_INPUT_RATE_VERTEX};
+        const VkVertexInputBindingDescription screenBinding{0, 11 * sizeof(float), VK_VERTEX_INPUT_RATE_VERTEX};
         const VkVertexInputAttributeDescription screenAttributes[] = {
             {0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0},
             {1, 0, VK_FORMAT_R32G32_SFLOAT, 4 * sizeof(float)},
-            {2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 6 * sizeof(float)}};
+            {2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 6 * sizeof(float)},
+            {3, 0, VK_FORMAT_R32_SFLOAT, 10 * sizeof(float)}};
         VkPipelineVertexInputStateCreateInfo input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         input.vertexBindingDescriptionCount = 1;
         input.pVertexBindingDescriptions = screen ? &screenBinding : &binding;
-        input.vertexAttributeDescriptionCount = 3;
+        input.vertexAttributeDescriptionCount = screen ? 4 : 3;
         input.pVertexAttributeDescriptions = screen ? screenAttributes : attributes;
         VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
         assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -259,7 +260,13 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     if (!pipeline)
         CreateShapePipeline(blend, screen, depthTest, depthWrite);
     if (lighting)
-        BindLighting(*lighting);
+        BindLighting(*lighting, false);
+    else
+    {
+        ShapeLighting unlit;
+        unlit.fogColor = _fogColor;
+        BindLighting(unlit, true);
+    }
     auto& frame = _frames[_frame];
     // Retain each mesh once per frame until that frame's submission fence completes.
     if (std::find(frame.meshes.begin(), frame.meshes.end(), mesh) == frame.meshes.end())
@@ -297,9 +304,16 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     }
 }
 
-void VulkanContext::BindLighting(const ShapeLighting& lighting)
+void VulkanContext::BindLighting(const ShapeLighting& lighting, bool screen)
 {
     auto& frame = _frames[_frame];
+    auto& cache = screen ? frame.screenUniform : frame.nativeUniform;
+    if (cache.set && std::memcmp(&cache.value, &lighting, sizeof(lighting)) == 0)
+    {
+        vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 2, 1,
+            &cache.set, 1, &cache.offset);
+        return;
+    }
     for (;; ++frame.uniformPage)
     {
         if (frame.uniformPage == frame.uniforms.size())
@@ -336,6 +350,7 @@ void VulkanContext::BindLighting(const ShapeLighting& lighting)
             continue;
         UploadMappedBuffer(page.buffer, &lighting, sizeof(lighting), offset);
         page.used = offset + sizeof(lighting);
+        cache = {lighting, page.set, offset};
         vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 2, 1, &page.set, 1,
                                 &offset);
         return;

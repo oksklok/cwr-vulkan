@@ -87,6 +87,7 @@ class VulkanContext
     unsigned ValidationErrors() const { return _validationErrors.load(); }
     void SetGamma(float gamma) { _gamma = gamma; }
     float Gamma() const { return _gamma; }
+    void SetFogColor(const std::array<float, 4>& color) { _fogColor = color; }
 
   private:
     // Opt-in bounded measurement, not a scheduler or frame-time governor.
@@ -126,6 +127,12 @@ class VulkanContext
         };
         std::vector<UniformPage> uniforms;
         size_t uniformPage = 0;
+        struct UniformCache
+        {
+            ShapeLighting value{};
+            VkDescriptorSet set = VK_NULL_HANDLE;
+            uint32_t offset = 0;
+        } nativeUniform, screenUniform;
     };
     static constexpr size_t FramesInFlight = 2;
     VkInstance _instance = VK_NULL_HANDLE;
@@ -143,7 +150,8 @@ class VulkanContext
     VkDescriptorSetLayout _textureLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout _lightingLayout = VK_NULL_HANDLE;
     uint32_t _uniformAlignment = 16;
-    void BindLighting(const ShapeLighting& lighting);
+    void BindLighting(const ShapeLighting& lighting, bool screen);
+    std::array<float, 4> _fogColor{};
     std::array<VkSampler, 8> _textureSamplers{};
     void CreateTextureLayout();
     VkSwapchainKHR _swapchain = VK_NULL_HANDLE;

@@ -26,4 +26,9 @@ inline void ShapeMaterial(ShapeLighting& out, const TLMaterial& material, const 
     const auto direction = sun.Direction();
     out.sunDirection = {direction.X(), direction.Y(), direction.Z(), 0};
 }
+inline void ShapeFog(ShapeLighting& out, float start, float end, ColorVal color, bool enabled)
+{
+    out.fogParams = {start, end > start ? 1.f / (end - start) : 0, enabled ? 1.f : 0.f, 0};
+    out.fogColor = {color.R(), color.G(), color.B(), 1};
+}
 } // namespace Poseidon::vk

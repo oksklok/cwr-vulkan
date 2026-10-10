@@ -33,7 +33,11 @@ class EngineVK final : public Engine
     void Pause() override;
     void Restore() override;
     void StopAll() override;
-    void FogColorChanged(ColorVal color) override { _fogColor = color; }
+    void FogColorChanged(ColorVal color) override
+    {
+        _fogColor = color;
+        _vk.SetFogColor({color.R(), color.G(), color.B(), 1});
+    }
     void HandleEvents() override;
     bool IsOpen() const override { return !_failed && _events.IsOpen(); }
     void SetMouseGrab(bool grab) override { _events.SetMouseGrab(grab); }
@@ -129,6 +133,7 @@ class EngineVK final : public Engine
     Matrix4 _shapeModelView;
     vk::ShapeLighting _lighting;
     bool _sunEnabled = true;
+    bool _shapeFog = true;
     const Shape* _activeShape = nullptr;
     std::array<float, 16> _shapeMVP{};
     std::array<float, 4> _shapeColor{1, 1, 1, 1};
@@ -145,6 +150,7 @@ class EngineVK final : public Engine
     int _softwareFlags = 0;
     std::vector<vk::ScreenVertex> _softwareVertices;
     void SubmitSoftware(const std::vector<uint32_t>& indices);
+    void SubmitScreen(const MipInfo&, const Vertex2DAbs*, int, const Rect2DAbs&, int, float fog = 1);
     void StopAfterFailure(const std::exception& error);
     [[noreturn]] static void Unsupported(const char* feature);
 };

@@ -568,6 +568,7 @@ bool VulkanContext::BeginFrame(uint32_t width, uint32_t height)
     for (auto& page : frame.transientPages)
         page.vertexUsed = page.indexUsed = 0;
     frame.uniformPage = 0;
+    frame.nativeUniform.set = frame.screenUniform.set = VK_NULL_HANDLE;
     for (auto& page : frame.uniforms)
         page.used = 0;
     const double retireEnd = _profile.enabled ? ProfileClock() : 0;

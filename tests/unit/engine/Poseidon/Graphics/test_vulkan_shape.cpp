@@ -37,7 +37,7 @@ TEST_CASE("Vulkan native normals use inverse transpose and materials use the eng
     vk::ShapeMaterial(lighting, material, sun, false);
     REQUIRE(lighting.ambient[3] == 0);
     REQUIRE(lighting.emissive[0] == Catch::Approx(0.1f));
-    REQUIRE(sizeof(vk::ShapeLighting) == 176);
+    REQUIRE(sizeof(vk::ShapeLighting) == 208);
 }
 
 TEST_CASE("Vulkan screen pipeline keys keep every depth blend combination independent", "[Graphics][vulkan-shape]")
@@ -49,6 +49,21 @@ TEST_CASE("Vulkan screen pipeline keys keep every depth blend combination indepe
     REQUIRE(vk::ScreenPipelineIndex(false, true) == 1);
     REQUIRE(vk::ScreenPipelineIndex(true, false) == 2);
     REQUIRE(vk::ScreenPipelineIndex(true, true) == 3);
+}
+
+TEST_CASE("Vulkan fog constants preserve scene range color and disabled state", "[Graphics][vulkan-shape]")
+{
+    vk::ShapeLighting lighting;
+    vk::ShapeFog(lighting, 90, 300, Color(0.2f, 0.4f, 0.6f), true);
+    REQUIRE(lighting.fogParams[0] == 90);
+    REQUIRE(lighting.fogParams[1] == Catch::Approx(1.f / 210));
+    REQUIRE(lighting.fogParams[2] == 1);
+    REQUIRE(lighting.fogColor[2] == Catch::Approx(0.6f));
+    vk::ShapeFog(lighting, 180, 600, Color(0.3f, 0.5f, 0.7f), false);
+    REQUIRE(lighting.fogParams[1] == Catch::Approx(1.f / 420));
+    REQUIRE(lighting.fogParams[2] == 0);
+    vk::ShapeFog(lighting, 0, 0, HWhite, true);
+    REQUIRE(lighting.fogParams[1] == 0);
 }
 
 TEST_CASE("Vulkan screen packing preserves pixels UV depth reciprocal W and ARGB", "[Graphics][vulkan-shape]")
@@ -72,6 +87,7 @@ TEST_CASE("Vulkan screen packing preserves pixels UV depth reciprocal W and ARGB
     REQUIRE(packed.color[1] == Catch::Approx(32.f / 255));
     REQUIRE(packed.color[2] == Catch::Approx(16.f / 255));
     REQUIRE(packed.color[3] == Catch::Approx(128.f / 255));
+    REQUIRE(packed.fog == 1); // HUD and ordinary 2D draws never inherit world fog.
     vertex.w = 0;
     REQUIRE_THROWS_AS(vk::ScreenGeometry(vertex, 800, 600), std::invalid_argument);
     vertex.w = 1;

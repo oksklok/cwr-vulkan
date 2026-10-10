@@ -28,10 +28,10 @@ void EngineVK::DrawDecal(Vector3Par screen, float rhw, float sizeX, float sizeY,
         vertices[i].u = corner[i][0];
         vertices[i].v = corner[i][1];
         // Non-alpha-fog decals encode fog, not transparency, in color.a.
-        // RGB fog remains the same documented unlit approximation as native Shapes.
         vertices[i].color = flags & IsAlphaFog ? color : PackedColor(color | 0xff000000);
     }
-    DrawPoly(mip, vertices, 4, Rect2DAbs(0, 0, _width, _height), flags & ~prepared);
+    const float fog = flags & (FogDisabled | NoDropdown | IsAlphaFog) ? 1.f : 1.f - float(color >> 24) / 255;
+    SubmitScreen(mip, vertices, 4, Rect2DAbs(0, 0, _width, _height), flags & ~prepared, fog);
 }
 
 void EngineVK::DrawLine(int begin, int end)
@@ -109,6 +109,10 @@ void EngineVK::Draw2D(const Draw2DPars& pars, const Rect2DAbs& rect, const Rect2
 }
 void EngineVK::DrawPoly(const MipInfo& mip, const Vertex2DAbs* vertices, int n, const Rect2DAbs& clip, int flags)
 {
+    SubmitScreen(mip, vertices, n, clip, flags);
+}
+void EngineVK::SubmitScreen(const MipInfo& mip, const Vertex2DAbs* vertices, int n, const Rect2DAbs& clip, int flags, float fog)
+{
     const int allowed = NoZBuf | NoZWrite | IsAlpha | IsTransparent | IsAlphaFog | ClampU | ClampV | NoClamp |
                         PointSampling | BestMipmap | FogDisabled;
     if (flags & ~allowed)
@@ -127,7 +131,10 @@ void EngineVK::DrawPoly(const MipInfo& mip, const Vertex2DAbs* vertices, int n, 
     std::vector<vk::ScreenVertex> packed;
     std::vector<uint32_t> indices;
     for (int i = 0; i < n; ++i)
+    {
         packed.push_back(vk::ScreenGeometry(vertices[i], _width, _height));
+        packed.back().fog = fog;
+    }
     for (int i = 2; i < n; ++i)
     {
         indices.push_back(0);

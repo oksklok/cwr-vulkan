@@ -10,5 +10,6 @@ struct alignas(16) ShapeLighting
     std::array<float, 12> normal{};
     std::array<float, 4> sunDirection{};
     std::array<float, 4> ambient{}, diffuse{}, emissive{};
+    std::array<float, 4> fogParams{}, fogColor{};
 };
 } // namespace Poseidon::vk
