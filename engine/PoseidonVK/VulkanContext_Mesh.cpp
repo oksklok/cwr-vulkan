@@ -174,7 +174,7 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         samples.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
         VkPipelineDepthStencilStateCreateInfo depth{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
         depth.depthTestEnable = depthTest;
-        depth.depthWriteEnable = depthTest && depthWrite && !translucent;
+        depth.depthWriteEnable = depthTest && depthWrite;
         depth.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
         VkPipelineColorBlendAttachmentState attachment{};
         attachment.blendEnable = translucent;
@@ -208,8 +208,7 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         Require(vkCreateGraphicsPipelines(
                     _device, VK_NULL_HANDLE, 1, &pipeline, nullptr,
                     screen        ? &_screenPipelines[ScreenPipelineIndex(depthTest, translucent, depthWrite)]
-                    : translucent ? &_blendPipeline
-                                  : &_shapePipeline),
+                                  : &_shapePipelines[ScreenPipelineIndex(depthTest, translucent, depthWrite)]),
                 "create graphics pipeline");
     }
     catch (...)
@@ -253,10 +252,8 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
         throw std::logic_error("Vulkan Shape: texture is not live on this device");
     if (sampler >= 8)
         throw std::out_of_range("Vulkan Shape: sampler index");
-    depthWrite = depthWrite && !blend;
     auto& pipeline = screen  ? _screenPipelines[ScreenPipelineIndex(depthTest, blend, depthWrite)]
-                     : blend ? _blendPipeline
-                             : _shapePipeline;
+                             : _shapePipelines[ScreenPipelineIndex(depthTest, blend, depthWrite)];
     if (!pipeline)
         CreateShapePipeline(blend, screen, depthTest, depthWrite);
     if (lighting)

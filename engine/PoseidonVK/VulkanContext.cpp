@@ -333,12 +333,12 @@ void VulkanContext::DestroySwapchain() noexcept
             vkDestroyPipeline(_device, pipeline, nullptr);
         pipeline = VK_NULL_HANDLE;
     }
-    if (_blendPipeline)
-        vkDestroyPipeline(_device, _blendPipeline, nullptr);
-    _blendPipeline = VK_NULL_HANDLE;
-    if (_shapePipeline)
-        vkDestroyPipeline(_device, _shapePipeline, nullptr);
-    _shapePipeline = VK_NULL_HANDLE;
+    for (auto& pipeline : _shapePipelines)
+    {
+        if (pipeline)
+            vkDestroyPipeline(_device, pipeline, nullptr);
+        pipeline = VK_NULL_HANDLE;
+    }
     if (_trianglePipeline)
         vkDestroyPipeline(_device, _trianglePipeline, nullptr);
     _trianglePipeline = VK_NULL_HANDLE;

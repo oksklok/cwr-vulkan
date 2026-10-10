@@ -146,6 +146,8 @@ class EngineVK final : public Engine
     unsigned _sectionSampler = 0;
     float _sectionAlphaCutoff = 0;
     bool _sectionBlend = false;
+    bool _sectionDepthTest = true, _sectionDepthWrite = true;
+    int _shapeFlags = 0;
     TLVertexTable* _softwareMesh = nullptr;
     MipInfo _softwareMip;
     int _softwareFlags = 0;

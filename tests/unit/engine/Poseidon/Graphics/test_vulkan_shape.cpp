@@ -8,6 +8,32 @@
 
 using namespace Poseidon;
 
+TEST_CASE("Vulkan native alpha flags distinguish blending cutout and fading", "[Graphics][vulkan-shape]")
+{
+    const auto opaque = vk::ShapeAlpha(render::SplitLegacy(0), AlphaStats::Opaque, 1);
+    REQUIRE_FALSE(opaque.blend);
+    REQUIRE(opaque.cutoff == 0);
+    const auto cutout = vk::ShapeAlpha(render::SplitLegacy(IsTransparent), AlphaStats::Opaque, 1);
+    REQUIRE_FALSE(cutout.blend);
+    REQUIRE(cutout.cutoff == Catch::Approx(192.f / 255));
+    const auto alpha = vk::ShapeAlpha(render::SplitLegacy(IsAlpha), AlphaStats::Opaque, 1);
+    REQUIRE(alpha.blend);
+    REQUIRE(alpha.depthWrite); // IsAlpha alone does not imply NoZWrite in GL33.
+    REQUIRE(alpha.cutoff == Catch::Approx(1.f / 255));
+    REQUIRE(vk::ShapeAlpha(render::SplitLegacy(0), AlphaStats::Blend, 1).blend);
+    REQUIRE(vk::ShapeAlpha(render::SplitLegacy(0), AlphaStats::Cutout, 1).cutoff == 0.5f);
+    const auto fade = vk::ShapeAlpha(render::SplitLegacy(IsTransparent), AlphaStats::Cutout, 0.25f);
+    REQUIRE(fade.blend);
+    REQUIRE(fade.cutoff == Catch::Approx(1.f / 255));
+    const auto readOnly = vk::ShapeAlpha(render::SplitLegacy(NoZWrite), AlphaStats::Opaque, 1);
+    REQUIRE_FALSE(readOnly.blend);
+    REQUIRE(readOnly.depthTest);
+    REQUIRE_FALSE(readOnly.depthWrite);
+    const auto overlay = vk::ShapeAlpha(render::SplitLegacy(NoZBuf | IsAlpha), AlphaStats::Opaque, 1);
+    REQUIRE_FALSE(overlay.depthTest);
+    REQUIRE_FALSE(overlay.depthWrite);
+}
+
 TEST_CASE("Vulkan native normals use inverse transpose and materials use the engine sun", "[Graphics][vulkan-shape]")
 {
     Matrix4 model(MIdentity);
@@ -212,7 +238,7 @@ TEST_CASE("Vulkan Shape accepts opaque color but rejects unfinished render state
     spec.material = render::Material::DisableSun;
     REQUIRE(vk::SupportedShapeSpec(spec));
     spec.backend = render::Backend::NoZWrite;
-    REQUIRE_FALSE(vk::SupportedShapeSpec(spec));
+    REQUIRE(vk::SupportedShapeSpec(spec));
     spec.backend = render::Backend::IsTransparent;
     REQUIRE(vk::SupportedShapeSpec(spec));
     spec.backend = render::Backend::ClampU | render::Backend::PointSampling;

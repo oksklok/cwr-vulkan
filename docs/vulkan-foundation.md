@@ -685,3 +685,19 @@ in Infantry absent from the GL33 reference. Two small water-state experiments
 did not fix it and were reverted. No campaign/full mission was completed, and
 night-vision goggles were not exercised. Basic object/vehicle shadow parity is
 the highest-value next visual milestone.
+
+## Projected-shadow work (2026-10-10)
+
+The mip decoder retains its decoded prefix at valid one-pixel tails unsupported
+by PacLevelMem, while rejecting truncated payloads and invalid dimensions.
+Three existing PAA/PAC fixtures reproduce the old failure and now pass; five
+sampled retail textures still pass (20 focused cases / 264 assertions).
+
+Native alpha selection now honors IsAlpha/IsTransparent and material opacity.
+Blending no longer implicitly disables depth writes: NoZWrite/NoZBuf select
+independent native and screen pipelines, following GL33. Blended fades retain
+the near-zero threshold; explicit cutout flags use GL33's 192/255 threshold.
+Ten focused cases / 88 assertions and 89 policy guards pass. RTX Take the Car
+foliage, buildings, weapon/HUD and model-smoke Jeep/building were inspected;
+a matching GL33 mission view was captured. Timed and normal-close Vulkan runs
+report zero validation errors/warnings. Evidence: build/shadow-live/m1-*.

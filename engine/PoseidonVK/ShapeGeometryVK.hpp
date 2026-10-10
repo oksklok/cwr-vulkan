@@ -2,6 +2,7 @@
 
 #include <Poseidon/Graphics/Rendering/Shape/Shape.hpp>
 #include <Poseidon/Graphics/Rendering/RenderFlags.hpp>
+#include <Poseidon/Graphics/Textures/PAADecoder.hpp>
 #include <array>
 #include <cstdint>
 #include <stdexcept>
@@ -9,12 +10,30 @@
 
 namespace Poseidon::vk
 {
+struct ShapeAlphaState
+{
+    bool blend;
+    float cutoff;
+    bool depthTest;
+    bool depthWrite;
+};
+inline ShapeAlphaState ShapeAlpha(const render::LegacySpec& spec, AlphaStats::Kind texture, float opacity)
+{
+    const bool blend = render::Has(spec.backend, render::Backend::IsAlpha) ||
+                       texture == AlphaStats::Blend || opacity < 1;
+    const bool cutout = render::Has(spec.backend, render::Backend::IsTransparent) || texture == AlphaStats::Cutout;
+    const bool depth = !render::Has(spec.backend, render::Backend::NoZBuf);
+    const float cutoutRef = render::Has(spec.backend, render::Backend::IsTransparent) ? 192.f / 255 : 0.5f;
+    return {blend, blend ? 1.f / 255 : cutout ? cutoutRef : 0.f,
+            depth, depth && !render::Has(spec.backend, render::Backend::NoZWrite)};
+}
 inline bool SupportedShapeSpec(const render::LegacySpec& spec)
 {
     const auto backend = render::Backend::IsAlpha | render::Backend::IsTransparent | render::Backend::PointSampling |
                          render::Backend::NoClamp | render::Backend::ClampU | render::Backend::ClampV |
                          render::Backend::DetailTexture | render::Backend::SpecularTexture |
-                         render::Backend::ZBiasStep | render::Backend::ZBiasMaskHi;
+                         render::Backend::ZBiasStep | render::Backend::ZBiasMaskHi |
+                         render::Backend::NoZBuf | render::Backend::NoZWrite;
     // IsAnimated denotes engine-selected texture frames, not dynamic vertices.
     const auto material = render::Material::DisableSun | render::Material::BestMipmap | render::Material::IsAnimated;
     const auto routing = render::Routing::IsColored | render::Routing::IsAlphaOrdered | render::Routing::NoShadow |

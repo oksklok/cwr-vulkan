@@ -68,17 +68,22 @@ void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& s
     vk::ShapeFog(_lighting, GScene->GetFogMinRange(), GScene->GetFogMaxRange(), _fogColor,
                  _shapeFog && !render::Has(spec.routing, render::Routing::FogDisabled | render::Routing::NoDropdown));
     _lighting.eyeCoef = _vk.EyeCoef();
-    _sectionAlphaCutoff = 0;
-    _sectionBlend = _materialColor[3] < 1 || _shapeColor[3] < 1;
+    auto alpha = AlphaStats::Opaque;
     if (mip._texture)
     {
         auto* texture = dynamic_cast<TextureVK*>(mip._texture);
         if (!texture)
             throw std::logic_error("Vulkan section received a foreign texture");
-        _sectionAlphaCutoff = texture->GetAlphaClass() == AlphaStats::Cutout ? 0.5f : 0;
-        _sectionBlend |= texture->GetAlphaClass() == AlphaStats::Blend;
+        alpha = texture->GetAlphaClass();
         _sectionTexture = texture->Image(_vk);
     }
+    const auto state = vk::ShapeAlpha(render::SplitLegacy(render::MergeLegacy(spec) |
+                                       (_shapeFlags & (IsAlpha | IsTransparent | NoZBuf | NoZWrite))),
+                                       alpha, _materialColor[3] * _shapeColor[3]);
+    _sectionBlend = state.blend;
+    _sectionAlphaCutoff = state.cutoff;
+    _sectionDepthTest = state.depthTest;
+    _sectionDepthWrite = state.depthWrite;
 }
 
 void EngineVK::PrepareMeshTL(const LightList& lights, const Matrix4& modelToWorld, const render::LegacySpec& spec)
@@ -91,6 +96,7 @@ void EngineVK::PrepareMeshTL(const LightList& lights, const Matrix4& modelToWorl
         Unsupported("Shape render flags outside opaque untextured/IsColored");
     }
     const auto* camera = GScene->GetCamera();
+    _shapeFlags = render::MergeLegacy(spec);
     Matrix4 relative = modelToWorld;
     relative.SetPosition(modelToWorld.Position() - camera->Position());
     vk::ShapeWorld(_lighting, relative);
@@ -142,8 +148,8 @@ void EngineVK::DrawSectionTL(const Shape& shape, int begin, int end)
     if (!_vk.FrameOpen())
         return; // Minimized drawable: no acquired image, but unsupported states above still fail.
     _vk.DrawMesh(buffer->Buffers(), range.begin, range.end - range.begin, sizeof(VertexIndex) == 2, _shapeMVP, color,
-                 _sectionTexture, _sectionSampler, _sectionAlphaCutoff, _sectionBlend, false, true, nullptr,
-                 _sectionDetail, _secondaryMode, _bumpLight, 0, 0, true, &_lighting);
+                 _sectionTexture, _sectionSampler, _sectionAlphaCutoff, _sectionBlend, false, _sectionDepthTest, nullptr,
+                 _sectionDetail, _secondaryMode, _bumpLight, 0, 0, _sectionDepthWrite, &_lighting);
 }
 
 void EngineVK::EndMeshTL(const Shape& shape)

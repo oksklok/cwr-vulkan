@@ -172,8 +172,7 @@ class VulkanContext
     std::vector<DepthAttachment> _depth;
     VkFormat _depthFormat = VK_FORMAT_UNDEFINED;
     VkPipelineLayout _shapeLayout = VK_NULL_HANDLE;
-    VkPipeline _shapePipeline = VK_NULL_HANDLE;
-    VkPipeline _blendPipeline = VK_NULL_HANDLE;
+    std::array<VkPipeline, 8> _shapePipelines{};
     std::array<VkPipeline, 8> _screenPipelines{};
     bool _loggedShape = false;
     void CreateShapePipeline(bool blend = false, bool screen = false, bool depthTest = true, bool depthWrite = true);
