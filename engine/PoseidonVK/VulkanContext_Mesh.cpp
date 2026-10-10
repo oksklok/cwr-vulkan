@@ -321,6 +321,7 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
                              : _shapePipelines[ScreenPipelineIndex(depthTest, blend, depthWrite)];
     if (!pipeline)
         CreateShapePipeline(blend, screen, depthTest, depthWrite, shadow, additive);
+    const double lightingStart = _profile.enabled ? ProfileClock() : 0;
     if (lighting)
     {
         BindLighting(*lighting, false);
@@ -342,23 +343,65 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     }
     auto& frame = _frames[_frame];
     // Retain each mesh once per frame until that frame's submission fence completes.
+    const double retentionStart = _profile.enabled ? ProfileClock() : 0;
+    if (_profile.enabled)
+        _profile.bindingMs += retentionStart - lightingStart;
     if (std::find(frame.meshes.begin(), frame.meshes.end(), mesh) == frame.meshes.end())
         frame.meshes.push_back(mesh);
     if (std::find(frame.textures.begin(), frame.textures.end(), sampled) == frame.textures.end())
         frame.textures.push_back(sampled);
     if (std::find(frame.textures.begin(), frame.textures.end(), sampledDetail) == frame.textures.end())
         frame.textures.push_back(sampledDetail);
-    vkCmdBindPipeline(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
-    const VkDescriptorSet descriptors[] = {sampled->descriptors[sampler], sampledDetail->descriptors[0]};
-    vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 0, 2, descriptors, 0,
-                            nullptr);
-    vkCmdBindVertexBuffers(frame.command, 0, 1, &mesh->vertices.buffer, &vertexOffset);
-    vkCmdBindIndexBuffer(frame.command, mesh->indices.buffer, indexOffset,
-                         index16 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
+    const double bindingStart = _profile.enabled ? ProfileClock() : 0;
+    if (_profile.enabled)
+        _profile.retentionMs += bindingStart - retentionStart;
+    if (_commands.pipeline != pipeline)
+    {
+        vkCmdBindPipeline(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline);
+        _commands.pipeline = pipeline;
+        if (_profile.enabled) ++_profile.stateCommands[0];
+    }
+    // Immutable descriptor handles identify both image version and sampler.
+    const std::array<VkDescriptorSet, 2> descriptors{sampled->descriptors[sampler], sampledDetail->descriptors[0]};
+    if (_commands.textures != descriptors)
+    {
+        vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 0, 2,
+                                descriptors.data(), 0, nullptr);
+        _commands.textures = descriptors;
+        if (_profile.enabled) ++_profile.stateCommands[1];
+    }
+    if (_commands.vertex != mesh->vertices.buffer || _commands.vertexOffset != vertexOffset)
+    {
+        vkCmdBindVertexBuffers(frame.command, 0, 1, &mesh->vertices.buffer, &vertexOffset);
+        _commands.vertex = mesh->vertices.buffer;
+        _commands.vertexOffset = vertexOffset;
+        if (_profile.enabled) ++_profile.stateCommands[3];
+    }
+    const VkIndexType indexType = index16 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32;
+    if (_commands.index != mesh->indices.buffer || _commands.indexOffset != indexOffset || _commands.indexType != indexType)
+    {
+        vkCmdBindIndexBuffer(frame.command, mesh->indices.buffer, indexOffset, indexType);
+        _commands.index = mesh->indices.buffer;
+        _commands.indexOffset = indexOffset;
+        _commands.indexType = indexType;
+        if (_profile.enabled) ++_profile.stateCommands[4];
+    }
     const VkViewport viewport{0, 0, float(_extent.width), float(_extent.height), 0, 1};
-    const VkRect2D scissor{{0, 0}, _extent};
-    vkCmdSetViewport(frame.command, 0, 1, &viewport);
-    vkCmdSetScissor(frame.command, 0, 1, clip ? clip : &scissor);
+    const VkRect2D scissor = clip ? *clip : VkRect2D{{0, 0}, _extent};
+    if (!_commands.viewportValid || std::memcmp(&_commands.viewport, &viewport, sizeof(viewport)) != 0)
+    {
+        vkCmdSetViewport(frame.command, 0, 1, &viewport);
+        _commands.viewport = viewport;
+        _commands.viewportValid = true;
+        if (_profile.enabled) ++_profile.stateCommands[5];
+    }
+    if (!_commands.scissorValid || std::memcmp(&_commands.scissor, &scissor, sizeof(scissor)) != 0)
+    {
+        vkCmdSetScissor(frame.command, 0, 1, &scissor);
+        _commands.scissor = scissor;
+        _commands.scissorValid = true;
+        if (_profile.enabled) ++_profile.stateCommands[6];
+    }
     std::array<float, 28> constants{};
     std::copy(mvp.begin(), mvp.end(), constants.begin());
     std::copy(color.begin(), color.end(), constants.begin() + 16);
@@ -367,8 +410,18 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     constants[22] = detail ? secondaryMode : 0;
     constants[23] = shadow ? 1.f : 0.f;
     std::copy(lightDirection.begin(), lightDirection.end(), constants.begin() + 24);
-    vkCmdPushConstants(frame.command, _shapeLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
-                       sizeof(constants), constants.data());
+    if (!_commands.constantsValid || std::memcmp(_commands.constants.data(), constants.data(), sizeof(constants)) != 0)
+    {
+        vkCmdPushConstants(frame.command, _shapeLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(constants), constants.data());
+        _commands.constants = constants;
+        _commands.constantsValid = true;
+        if (_profile.enabled) ++_profile.stateCommands[7];
+    }
+    if (_profile.enabled)
+    {
+        _profile.bindingMs += ProfileClock() - bindingStart;
+    }
     vkCmdDrawIndexed(frame.command, count, 1, firstIndex, 0, 0);
     if (_profile.enabled && screen)
         ++_profile.screenDraws;
@@ -380,14 +433,24 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     }
 }
 
+void VulkanContext::BindLightingSet(VkDescriptorSet set, uint32_t offset)
+{
+    if (_commands.lighting == set && _commands.lightingOffset == offset)
+        return;
+    vkCmdBindDescriptorSets(_frames[_frame].command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 2, 1, &set, 1,
+                            &offset);
+    _commands.lighting = set;
+    _commands.lightingOffset = offset;
+    if (_profile.enabled) ++_profile.stateCommands[2];
+}
+
 void VulkanContext::BindLighting(const ShapeLighting& lighting, bool screen)
 {
     auto& frame = _frames[_frame];
     auto& cache = screen ? frame.screenUniform : frame.nativeUniform;
     if (cache.set && std::memcmp(&cache.value, &lighting, sizeof(lighting)) == 0)
     {
-        vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 2, 1, &cache.set, 1,
-                                &cache.offset);
+        BindLightingSet(cache.set, cache.offset);
         return;
     }
     for (;; ++frame.uniformPage)
@@ -427,8 +490,7 @@ void VulkanContext::BindLighting(const ShapeLighting& lighting, bool screen)
         UploadMappedBuffer(page.buffer, &lighting, sizeof(lighting), offset);
         page.used = offset + sizeof(lighting);
         cache = {lighting, page.set, offset};
-        vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 2, 1, &page.set, 1,
-                                &offset);
+        BindLightingSet(page.set, offset);
         return;
     }
 }

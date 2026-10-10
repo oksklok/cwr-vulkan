@@ -138,6 +138,7 @@ VKAPI_ATTR void VKAPI_CALL vkDestroyInstance(VkInstance, const VkAllocationCallb
     }
 }
 int TestVulkanBuffers();
+int TestVulkanCommands();
 
 int main()
 {
@@ -145,6 +146,7 @@ int main()
     try
     {
         checks += TestVulkanBuffers();
+        checks += TestVulkanCommands();
         Check(sizeof(TriangleVertex) == 20 && sizeof(TriangleIndices[0]) == 2,
               "diagnostic vertex/index formats must match the pipeline");
         Check(TriangleIndices == std::array<uint16_t, 3>{2, 0, 1}, "diagnostic must exercise non-sequential indexing");

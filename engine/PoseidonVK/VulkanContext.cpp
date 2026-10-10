@@ -329,6 +329,7 @@ void VulkanContext::CreateFrameResources()
 
 void VulkanContext::DestroySwapchain() noexcept
 {
+    _commands = {};
     for (auto& pipeline : _shadowPipelines)
     {
         if (pipeline)
@@ -598,7 +599,10 @@ bool VulkanContext::BeginFrame(uint32_t width, uint32_t height)
         _recreate = true; // Consume this successful acquire before rebuilding.
     else
         Check(acquired, "acquire frame");
+    if (_profile.enabled)
+        _profile.commandStart = ProfileClock();
     Check(vkResetCommandBuffer(frame.command, 0), "reset frame command buffer");
+    _commands = {};
     VkCommandBufferBeginInfo commands{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     commands.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     Check(vkBeginCommandBuffer(frame.command, &commands), "begin frame command buffer");
@@ -683,6 +687,8 @@ void VulkanContext::EndFrame()
     auto& frame = _frames[_frame];
     vkCmdEndRenderPass(frame.command);
     Check(vkEndCommandBuffer(frame.command), "end frame command buffer");
+    if (_profile.enabled)
+        _profile.commandMs += ProfileClock() - _profile.commandStart;
     const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submit.waitSemaphoreCount = 1;
@@ -694,8 +700,11 @@ void VulkanContext::EndFrame()
     submit.pSignalSemaphores = &_rendered[_image];
     // Reset only immediately before submitting. An out-of-date acquire must
     // never strand a reset fence with no workload to signal it.
+    const double submitStart = _profile.enabled ? ProfileClock() : 0;
     Check(vkResetFences(_device, 1, &frame.submitted), "reset frame fence");
     Check(vkQueueSubmit(_graphics, 1, &submit, frame.submitted), "submit frame");
+    if (_profile.enabled)
+        _profile.submitMs += ProfileClock() - submitStart;
     ++_submittedFrames;
     VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
     present.waitSemaphoreCount = 1;
@@ -754,6 +763,15 @@ void VulkanContext::ReportProfile()
         _profile.softwareShadows / frames, _profile.shadowTriangles / frames,
         _profile.screenPolygons / frames, _profile.screenDraws / frames, _profile.screenBatches / frames,
         _profile.screenBatches ? double(_profile.screenPolygons) / _profile.screenBatches : 0);
+    std::fprintf(stderr,
+        "Vulkan commands: frames=%zu command_ms=%.3f submit_ms=%.3f retention_ms=%.3f binding_ms=%.3f "
+        "pipeline=%.1f textures=%.1f lighting=%.1f vertex=%.1f index=%.1f viewport=%.1f scissor=%.1f push=%.1f\n",
+        times.size(), _profile.commandMs / frames, _profile.submitMs / frames,
+        _profile.retentionMs / frames, _profile.bindingMs / frames,
+        _profile.stateCommands[0] / frames, _profile.stateCommands[1] / frames,
+        _profile.stateCommands[2] / frames, _profile.stateCommands[3] / frames,
+        _profile.stateCommands[4] / frames, _profile.stateCommands[5] / frames,
+        _profile.stateCommands[6] / frames, _profile.stateCommands[7] / frames);
     const double last = _profile.lastEnd;
     _profile = {};
     _profile.enabled = true;

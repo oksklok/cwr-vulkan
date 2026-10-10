@@ -103,6 +103,25 @@ class VulkanContext
     const std::array<float, 4>& EyeCoef() const { return _eyeCoef; }
 
   private:
+    friend struct VulkanCommandStateTest;
+    // Only the currently recording command buffer. All production draws use
+    // _shapeLayout; diagnostic drawing invalidates this before its other layout.
+    // Handles are non-owning: frame retention below still owns every resource.
+    struct CommandState
+    {
+        VkPipeline pipeline = VK_NULL_HANDLE;
+        std::array<VkDescriptorSet, 2> textures{};
+        VkDescriptorSet lighting = VK_NULL_HANDLE;
+        uint32_t lightingOffset = 0;
+        VkBuffer vertex = VK_NULL_HANDLE, index = VK_NULL_HANDLE;
+        VkDeviceSize vertexOffset = 0, indexOffset = 0;
+        VkIndexType indexType = VK_INDEX_TYPE_UINT16;
+        VkViewport viewport{};
+        VkRect2D scissor{};
+        std::array<float, 28> constants{};
+        bool viewportValid = false, scissorValid = false, constantsValid = false;
+    } _commands;
+    void BindLightingSet(VkDescriptorSet set, uint32_t offset);
     ScreenBatch _screenBatch;
     bool _batchScreens = true; // Process-local A/B profiling control; normal operation batches.
     // Opt-in bounded measurement, not a scheduler or frame-time governor.
@@ -111,6 +130,9 @@ class VulkanContext
         bool enabled = false;
         double lastEnd = 0, frameStart = 0;
         double recordMs = 0, geometryMs = 0, textureMs = 0, fenceMs = 0, retireMs = 0, acquireMs = 0, presentMs = 0;
+        double commandStart = 0, commandMs = 0, submitMs = 0, retentionMs = 0, bindingMs = 0;
+        // Pipeline, textures, lighting, vertex, index, viewport, scissor, push constants.
+        std::array<uint64_t, 8> stateCommands{};
         uint64_t transient = 0, allocations = 0, textureUploads = 0, litDraws = 0, localLights = 0;
         uint64_t nativeShadows = 0, softwareShadows = 0, shadowTriangles = 0;
         uint64_t screenPolygons = 0, screenBatches = 0, screenDraws = 0;

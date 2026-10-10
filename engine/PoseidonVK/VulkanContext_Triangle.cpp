@@ -138,6 +138,9 @@ void VulkanContext::DrawDiagnosticTriangle()
     if (!_trianglePipeline)
         CreateTrianglePipeline();
     const VkCommandBuffer command = _frames[_frame].command;
+    // This diagnostic uses an incompatible layout and bypasses the production
+    // binding path. The next production draw must establish all state anew.
+    _commands = {};
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, _trianglePipeline);
     const VkDeviceSize offset = 0;
     vkCmdBindVertexBuffers(command, 0, 1, &_triangleVertices.buffer, &offset);

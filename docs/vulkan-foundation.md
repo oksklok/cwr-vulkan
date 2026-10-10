@@ -908,3 +908,31 @@ runs and CPU command recording; GPU execution is not timestamp-profiled. The
 single next performance milestone is measuring and eliminating redundant Vulkan
 pipeline/descriptor/viewport/scissor bindings within those runs, while retaining
 exact draw order and invalidating cached state at command-buffer boundaries.
+
+## Command recording state cache (2026-10-10)
+
+VulkanContext now remembers only the state recorded in the current command
+buffer: pipeline, the two immutable texture/sampler descriptor handles, lighting
+set plus dynamic offset, vertex/index buffers plus offsets/index type, viewport,
+scissor and all 112 push-constant bytes. Identical state commands are omitted;
+draws, screen-batch boundaries, shaders and frame-fence resource ownership are
+unchanged. Resetting a command buffer, destroying/recreating the swapchain and
+the different-layout diagnostic triangle invalidate the cache. Clear and shadow
+boundaries retain Vulkan state legally; changed shadow pipeline/constants still
+bind normally. The existing native/screen lighting-data caches remain separate
+from the actual descriptor binding cache.
+
+CWR_VK_PROFILE adds emitted state-command counts, submit time, resource-retention
+search time and binding-path time (including lighting-data lookup/upload).
+command_ms measures elapsed reset/begin through end-command-buffer, excluding
+fence/acquire/retirement/submit/present; it includes engine work between draws
+and is not a GPU timestamp or pure CPU-cycle measurement. Existing record_ms
+retains its previous broader meaning. No new profiling switch was added.
+
+The Vulkan build, 32 focused Shape/batch/decoder cases (274 assertions), and 114
+driver-free policy checks pass. The new checks exercise real DrawMesh calls and
+verify identical-state suppression, offsets, index types, sampler/image versions,
+lighting set/offset changes, clipping, viewport, complete push bytes, native /
+screen / shadow transitions, diagnostic-layout restoration and reset. Real
+800x600 Infantry map runs have clean core/synchronization validation through
+normal shutdown. Matched timing and wider gameplay verification follow below.
