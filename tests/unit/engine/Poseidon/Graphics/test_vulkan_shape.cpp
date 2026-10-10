@@ -166,7 +166,36 @@ TEST_CASE("Vulkan native normals use inverse transpose and materials use the eng
     vk::ShapeMaterial(lighting, material, sun, false);
     REQUIRE(lighting.ambient[3] == 0);
     REQUIRE(lighting.emissive[0] == Catch::Approx(0.1f));
-    REQUIRE(sizeof(vk::ShapeLighting) == 752);
+    REQUIRE(sizeof(vk::ShapeLighting) == 768);
+}
+
+TEST_CASE("Vulkan specular constants preserve material power sun color and disable conditions", "[Graphics][vulkan-shape]")
+{
+    vk::ShapeLighting lighting;
+    LightSun sun;
+    sun.SetDiffuse(Color(0.2f, 0.4f, 0.6f));
+    TLMaterial material;
+    material.specular = Color(0.5f, 0.25f, 1);
+    material.specularPower = 32;
+    vk::ShapeMaterial(lighting, material, sun, true);
+    REQUIRE(lighting.specular == std::array<float, 4>{0.1f, 0.1f, 0.6f, 32});
+    REQUIRE(lighting.ambient[3] == 1);
+    vk::ShapeMaterial(lighting, material, sun, false);
+    REQUIRE(lighting.ambient[3] == 0); // Shader gates both diffuse and specular.
+    material.specularPower = 0;
+    vk::ShapeMaterial(lighting, material, sun, true);
+    REQUIRE(lighting.specular[3] == 0);
+    material.specularPower = 32;
+    sun.SetDiffuse(HBlack);
+    vk::ShapeMaterial(lighting, material, sun, true);
+    REQUIRE(lighting.specular == std::array<float, 4>{0, 0, 0, 32});
+    material.specular = HBlack;
+    sun.SetDiffuse(HWhite);
+    vk::ShapeMaterial(lighting, material, sun, true);
+    REQUIRE(lighting.specular == std::array<float, 4>{0, 0, 0, 32});
+    REQUIRE(offsetof(vk::ShapeLighting, specular) == 176);
+    REQUIRE(offsetof(vk::ShapeLighting, fogParams) == 192);
+    REQUIRE(offsetof(vk::ShapeLighting, localLights) == 256);
 }
 
 TEST_CASE("Vulkan screen pipeline keys keep every depth blend combination independent", "[Graphics][vulkan-shape]")

@@ -6,6 +6,7 @@ layout(set = 2, binding = 0, std140) uniform ShapeLighting {
     vec4 ambient;
     vec4 diffuse;
     vec4 emissive;
+    vec4 specular; // Sun diffuse * material specular RGB, material power.
     vec4 fogParams;
     vec4 fogColor;
     vec4 eyeCoef;

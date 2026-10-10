@@ -1326,3 +1326,37 @@ validation errors or warnings. The build passes and 269 driver-free guards
 include new winding/cull/shadow-policy checks. Temporary tracing was removed.
 Foliage silhouette differences remain for separate investigation; these captures
 use GL33's actual 0x-MSAA target, so they must not be attributed to MSAA coverage.
+
+### Native material specular
+
+The native lighting block now carries sun-diffuse times material-specular RGB
+and the original material exponent. The vertex shader computes GL33's normalized
+world-normal/view/sun half-vector response, gated by positive exponent and the
+existing sun-enable/DisableSun state. The normal/detail fragment path adds this
+separate term after diffuse texture/detail modulation and before night-eye,
+fog and gamma. Zero-specular materials, opacity, inverse-transpose normals,
+local lights, shadow shaders and water's corrected detail-alpha sampling remain
+unchanged. Software/UI vertices supply zero specular, as before; their CPU
+lighting currently supplies black specular RGB. No new material system is added.
+
+`visual-material-{vk,gl33}` compares the stock HMMWV, nearby buildings and glass
+at noon, low sun, a second angle, night and fog. HMMWV body materials in this
+run have no specular term and correctly do not acquire a new gloss. Narrow
+diagnostics confirmed nonzero stock native terrain (power 3) and animated-water
+(power 6) material terms. `visual-water-{before,spec,gl33}` covers six Infantry
+coast views: dawn shoreline/bay, noon bay/second coast, near water and fog.
+No white shoreline patches returned. Highlights are view-dependent and subtle
+in these views; this is not a claim of a large vehicle brightness improvement.
+Vehicle and water Vulkan runs closed normally with 2,180 / 3,386 frames and zero
+core/synchronization validation findings. The Vulkan build and 35 focused
+cases / 310 assertions pass, including specular color/power, disabled sun,
+black sun/material and std140 layout regression checks. Traces were removed.
+
+Further foliage diagnosis: the same `str_jablon.p3d` object at
+`[3061.324,230.263,6334.997]` uses LOD 0 / 55 vertices in both renderers.
+GL33 loads `jablon_renovace.pac` from mip 2 (64x64); Vulkan retains its 256x256
+base. The different stored-mip coverage contributes to the fuller GL33 crown.
+Evidence: `visual-lod-{vk,gl33}` and `visual-mip-gl33`. This is not MSAA coverage,
+nor evidence for changing the global 192/255 cutoff. GL33's demand-residency
+policy remains outside this targeted lighting pass; anisotropy, AI88 precision
+and the previously corrected mip-tail bounds are untouched.

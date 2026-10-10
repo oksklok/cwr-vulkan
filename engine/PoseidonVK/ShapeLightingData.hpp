@@ -13,7 +13,7 @@ struct alignas(16) ShapeLighting
     std::array<float, 16> world{};
     std::array<float, 12> normal{};
     std::array<float, 4> sunDirection{};
-    std::array<float, 4> ambient{}, diffuse{}, emissive{};
+    std::array<float, 4> ambient{}, diffuse{}, emissive{}, specular{};
     std::array<float, 4> fogParams{}, fogColor{};
     std::array<float, 4> eyeCoef{0, 0, 0, 1}, localCount{};
     std::array<ShapeLocalLight, 8> localLights{};

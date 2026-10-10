@@ -5,6 +5,7 @@ layout(location = 0) out vec4 outColor;
 layout(location = 0) in vec2 texCoord;
 layout(location = 1) in vec4 vertexColor;
 layout(location = 2) in float fogVisibility;
+layout(location = 3) in vec3 specularColor;
 layout(set = 0, binding = 0) uniform sampler2D diffuseTexture;
 layout(set = 1, binding = 0) uniform sampler2D detailTexture;
 layout(push_constant) uniform ShapeDraw { mat4 mvp; vec4 color; float alphaCutoff; float invGamma; float detailEnabled; vec4 lightDirection; } draw;
@@ -16,6 +17,8 @@ void main() {
         vec3 bumpNormal = -(texture(detailTexture, texCoord).xyz * 2.0 - 1.0);
         outColor.rgb += clamp(dot(draw.lightDirection.xyz, bumpNormal), 0.0, 1.0);
     } else if (draw.detailEnabled > 0.5) outColor.rgb *= texture(detailTexture, texCoord * 32.0).a * 2.0;
+    // PSNormal/PSDetail add specular after diffuse/detail, before night-eye and fog.
+    if (draw.detailEnabled < 1.5) outColor.rgb += specularColor;
     if (outColor.a < draw.alphaCutoff) discard;
     float luminance = clamp(dot(outColor.rgb, lighting.eyeCoef.rgb), 0.0, 1.0);
     float nightBlend = clamp(luminance + lighting.eyeCoef.a, 0.0, 1.0);

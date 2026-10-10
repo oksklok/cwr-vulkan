@@ -7,10 +7,12 @@ layout(location = 2) in vec3 normal;
 layout(location = 0) out vec2 texCoord;
 layout(location = 1) out vec4 vertexColor;
 layout(location = 2) out float fogVisibility;
+layout(location = 3) out vec3 specularColor;
 layout(push_constant) uniform ShapeDraw { mat4 mvp; vec4 color; float alphaCutoff; float invGamma; float detailEnabled; float shadow; } draw;
 void main() {
     gl_Position = draw.mvp * vec4(position, 1.0);
     texCoord = uv;
+    specularColor = vec3(0.0);
     vec3 relativeWorld = (lighting.world * vec4(position, 1.0)).xyz;
     float distance = length(relativeWorld);
     fogVisibility = lighting.fogParams.z > 0.5 ?
@@ -49,4 +51,11 @@ void main() {
             light.ambient.rgb * attenuation;
     }
     vertexColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+    // GL33 VSTransform: camera-relative half-vector, separate from diffuse.
+    if (lighting.specular.w > 0.0 && lighting.ambient.w > 0.0) {
+        vec3 viewDirection = normalize(-relativeWorld);
+        vec3 halfVector = normalize(-lighting.sunDirection.xyz + viewDirection);
+        float highlight = pow(max(dot(worldNormal, halfVector), 0.0), max(lighting.specular.w, 1.0));
+        specularColor = clamp(lighting.specular.rgb * highlight * lighting.ambient.w, 0.0, 1.0);
+    }
 }
