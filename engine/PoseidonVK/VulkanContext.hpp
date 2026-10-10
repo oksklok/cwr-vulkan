@@ -82,7 +82,7 @@ class VulkanContext
                   const std::shared_ptr<TextureImage>& detail = {}, float secondaryMode = 1,
                   const std::array<float, 3>& lightDirection = {0, -1, 0}, VkDeviceSize vertexOffset = 0,
                   VkDeviceSize indexOffset = 0, bool depthWrite = true, const ShapeLighting* lighting = nullptr,
-                  bool shadow = false);
+                  bool shadow = false, bool additive = false);
     void EndFrame();
     bool FrameOpen() const { return _frameOpen; }
     VkExtent2D Extent() const { return _extent; }
@@ -177,12 +177,12 @@ class VulkanContext
     VkFormat _depthFormat = VK_FORMAT_UNDEFINED;
     VkPipelineLayout _shapeLayout = VK_NULL_HANDLE;
     std::array<VkPipeline, 8> _shapePipelines{};
-    std::array<VkPipeline, 8> _screenPipelines{};
+    std::array<VkPipeline, 16> _screenPipelines{};
     std::array<VkPipeline, 2> _shadowPipelines{}; // Native and software projected geometry.
     bool _shadowPass = false;
     bool _loggedShape = false;
     void CreateShapePipeline(bool blend = false, bool screen = false, bool depthTest = true, bool depthWrite = true,
-                             bool shadow = false);
+                             bool shadow = false, bool additive = false);
     void CreateDepthAttachment(DepthAttachment& depth);
     std::vector<VkImage> _images;
     std::vector<VkImageView> _views;

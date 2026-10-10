@@ -14,7 +14,8 @@ void EngineVK::DrawDecal(Vector3Par screen, float rhw, float sizeX, float sizeY,
 {
     if (sizeX <= 0 || sizeY <= 0)
         return; // Empty billboard.
-    // Object::DrawDecal has already projected, lit and colored this billboard.
+    // Object/Scene has already projected, lit and colored this billboard.
+    // Keep IsLight: its remaining backend meaning is additive blending.
     const int prepared = IsColored | DisableSun | NoShadow | ShadowDisabled | NoDropdown | IsAlphaOrdered | IsAnimated |
                          OnSurface | IsOnSurface;
     Vertex2DAbs vertices[4];
@@ -30,7 +31,7 @@ void EngineVK::DrawDecal(Vector3Par screen, float rhw, float sizeX, float sizeY,
         // Non-alpha-fog decals encode fog, not transparency, in color.a.
         vertices[i].color = flags & IsAlphaFog ? color : PackedColor(color | 0xff000000);
     }
-    const float fog = flags & (FogDisabled | NoDropdown | IsAlphaFog) ? 1.f : 1.f - float(color >> 24) / 255;
+    const float fog = flags & (FogDisabled | NoDropdown | IsAlphaFog | IsLight) ? 1.f : 1.f - float(color >> 24) / 255;
     SubmitScreen(mip, vertices, 4, Rect2DAbs(0, 0, _width, _height), flags & ~prepared, fog);
 }
 
@@ -73,7 +74,7 @@ void EngineVK::DrawPoints(int begin, int end)
     // Reuse transient pages and the screen constants; these are already lit.
     const float corners[][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
     const int prepared = DisableSun | IsColored | NoShadow | ShadowDisabled | NoDropdown | IsAnimated | ZBiasMask |
-                         SpecLighting | IsLight;
+                         SpecLighting;
     for (int index = begin; index < end; ++index)
     {
         if (_softwareMesh->Clip(index) & ClipAll)
@@ -148,7 +149,7 @@ void EngineVK::SubmitScreen(const MipInfo& mip, const Vertex2DAbs* vertices, int
                             float fog)
 {
     const int allowed = NoZBuf | NoZWrite | IsAlpha | IsTransparent | IsAlphaFog | ClampU | ClampV | NoClamp |
-                        PointSampling | BestMipmap | FogDisabled;
+                        PointSampling | BestMipmap | FogDisabled | IsLight;
     if (flags & ~allowed)
         Unsupported("2D primitive flags outside diffuse alpha sampling");
     if (!_vk.FrameOpen())
@@ -188,13 +189,13 @@ void EngineVK::SubmitScreen(const MipInfo& mip, const Vertex2DAbs* vertices, int
         alpha = texture->GetAlphaClass();
     }
     const bool depth = (flags & NoZBuf) == 0;
-    const bool blend = alpha == AlphaStats::Blend || (flags & (IsAlpha | IsAlphaFog)) != 0;
+    const bool blend = alpha == AlphaStats::Blend || (flags & (IsAlpha | IsAlphaFog | IsLight)) != 0;
     // Alpha-fog/transparent effects must fade, not disappear at the opaque
     // cutout threshold. GL33 rejects only near-zero alpha on blended draws.
     const float cutoff = blend ? 1.f / 255 : alpha == AlphaStats::Cutout ? 0.5f : 0;
     _vk.DrawMesh(buffer.buffers, 0, indices.size(), false, {}, {1, 1, 1, 1}, image,
                  vk::ShapeSampler(render::SplitLegacy(flags)), cutoff, blend, true, depth, &scissor, {}, 1, {0, -1, 0},
-                 buffer.vertexOffset, buffer.indexOffset, (flags & NoZWrite) == 0);
+                 buffer.vertexOffset, buffer.indexOffset, (flags & NoZWrite) == 0, nullptr, false, (flags & IsLight) != 0);
 }
 void EngineVK::DrawPoly(const MipInfo& mip, const Vertex2DPixel* vertices, int n, const Rect2DPixel& clip, int flags)
 {

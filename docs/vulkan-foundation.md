@@ -727,3 +727,22 @@ resize and minimize/restore captures were inspected. Normal-close validation
 was clean; 30 focused decoder/Shape cases (354 assertions) and 92 guards pass.
 Evidence: m3-hmmwv, m3-final. A separate low-sun probe exposed an existing
 IsLight flare-decal rejection; that is addressed in the appearance milestone.
+
+Low-sun checks exposed IsLight decals being rejected (and software lights using
+ordinary alpha blending). Screen/software light draws now use GL33's additive
+SRC_ALPHA/ONE blend and disabled RGB fog, with distinct depth/blend pipelines.
+Native world lighting is unchanged. Ten Shape cases / 93 assertions pass.
+
+At matching B02HMMWV viewpoints, Vulkan and default GL33 captures at 13:00,
+18:00 and 23:00 show matching projected vehicle/scenery shadow direction and
+low-sun length. Existing runtime settings enabled object shadows (the isolated
+profile originally had objectShadows=0). Buildings, trees and the roadside
+monument cast in the ordinary Scene pass. At 19:30/23:00 projected submissions
+fall to zero. Nearby nighttime brightness also occurs in GL33. A second Jeep
+was placed through the existing script API for an overlapping-caster check;
+the combined vehicle/building shadows did not accumulate extra dark bands.
+These controlled time/placement probes are not claimed as untouched mission
+playthroughs. One malformed probe aborted via the test harness; the corrected
+run closed normally with 2809 frames and zero validation errors/warnings.
+Evidence: m4-conditions, m4-reference, m4-overlap. Road filtering and foliage
+edge differences versus GL33 remain outside this shadow change.

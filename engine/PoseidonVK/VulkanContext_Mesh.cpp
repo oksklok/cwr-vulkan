@@ -106,7 +106,8 @@ MeshSlice VulkanContext::UploadTransientMesh(const void* vertices, size_t vertex
     }
 }
 
-void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool depthTest, bool depthWrite, bool shadow)
+void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool depthTest, bool depthWrite, bool shadow,
+                                        bool additive)
 {
     if (!_shapeLayout)
     {
@@ -188,10 +189,10 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         VkPipelineColorBlendAttachmentState attachment{};
         attachment.blendEnable = translucent;
         attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        attachment.dstColorBlendFactor = additive ? VK_BLEND_FACTOR_ONE : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
         attachment.colorBlendOp = attachment.alphaBlendOp = VK_BLEND_OP_ADD;
         attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-        attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        attachment.dstAlphaBlendFactor = additive ? VK_BLEND_FACTOR_ZERO : VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
         if (shadow)
         {
             attachment.blendEnable = VK_TRUE;
@@ -225,7 +226,7 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         Require(vkCreateGraphicsPipelines(
                     _device, VK_NULL_HANDLE, 1, &pipeline, nullptr,
                     shadow        ? &_shadowPipelines[screen ? 1 : 0]
-                    : screen      ? &_screenPipelines[ScreenPipelineIndex(depthTest, translucent, depthWrite)]
+                    : screen      ? &_screenPipelines[ScreenPipelineIndex(depthTest, translucent, depthWrite, additive)]
                                   : &_shapePipelines[ScreenPipelineIndex(depthTest, translucent, depthWrite)]),
                 "create graphics pipeline");
     }
@@ -249,8 +250,11 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
                              bool blend, bool screen, bool depthTest, const VkRect2D* clip,
                              const std::shared_ptr<TextureImage>& detail, float secondaryMode,
                              const std::array<float, 3>& lightDirection, VkDeviceSize vertexOffset,
-                             VkDeviceSize indexOffset, bool depthWrite, const ShapeLighting* lighting, bool shadow)
+                             VkDeviceSize indexOffset, bool depthWrite, const ShapeLighting* lighting, bool shadow,
+                             bool additive)
 {
+    if (additive && (!screen || shadow || !blend))
+        throw std::logic_error("Vulkan additive drawing requires a blended non-shadow screen mesh");
     if (shadow != _shadowPass)
         throw std::logic_error("Vulkan projected shadow drawing must match BeginShadowPass/EndShadowPass");
     if (!_frameOpen || !mesh || mesh->device != _device || !mesh->vertices.buffer || !mesh->indices.buffer)
@@ -278,10 +282,10 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     if (sampler >= 8)
         throw std::out_of_range("Vulkan Shape: sampler index");
     auto& pipeline = shadow  ? _shadowPipelines[screen ? 1 : 0]
-                    : screen ? _screenPipelines[ScreenPipelineIndex(depthTest, blend, depthWrite)]
+                    : screen ? _screenPipelines[ScreenPipelineIndex(depthTest, blend, depthWrite, additive)]
                              : _shapePipelines[ScreenPipelineIndex(depthTest, blend, depthWrite)];
     if (!pipeline)
-        CreateShapePipeline(blend, screen, depthTest, depthWrite, shadow);
+        CreateShapePipeline(blend, screen, depthTest, depthWrite, shadow, additive);
     if (lighting)
     {
         BindLighting(*lighting, false);

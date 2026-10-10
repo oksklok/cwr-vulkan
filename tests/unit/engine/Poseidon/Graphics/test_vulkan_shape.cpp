@@ -73,6 +73,9 @@ TEST_CASE("Vulkan screen pipeline keys keep every depth blend combination indepe
     REQUIRE(vk::ScreenPipelineIndex(true, true, false) == 7);
     REQUIRE(vk::ScreenPipelineIndex(false, false, false) == 0);
     REQUIRE(vk::ScreenPipelineIndex(false, true) == 1);
+    REQUIRE(vk::ScreenPipelineIndex(false, true, false, true) == 9);
+    REQUIRE(vk::ScreenPipelineIndex(true, true, true, true) == 11);
+    REQUIRE(vk::ScreenPipelineIndex(true, true, false, true) == 15);
     REQUIRE(vk::ScreenPipelineIndex(true, false) == 2);
     REQUIRE(vk::ScreenPipelineIndex(true, true) == 3);
 }
