@@ -716,3 +716,14 @@ intact. Take the Car's ordinary scene also runs. RTX core/sync validation throug
 normal close: 5244/4811 submissions, zero errors/warnings. Software shadow draws
 were measured; cached native shadow coverage is checked in the next milestone.
 Build, ten focused Shape cases and 92 policy guards pass. Evidence: m2-*.
+
+Cached terrain-fitted shadow Shapes now accept the engine's immutable small
+discardable buffers; other dynamic geometry still uses software TL. Native
+shadow fading follows Scene::FogExponential rather than a linear approximation.
+Stock HMMWV runs exercised both moving software shadows and stopped cached
+native shadows (5 draws / 174 triangles per frame), with no steady-state GPU
+allocations or texture uploads. Matching GL33 vehicle shadow shape/opacity,
+resize and minimize/restore captures were inspected. Normal-close validation
+was clean; 30 focused decoder/Shape cases (354 assertions) and 92 guards pass.
+Evidence: m3-hmmwv, m3-final. A separate low-sun probe exposed an existing
+IsLight flare-decal rejection; that is addressed in the appearance milestone.

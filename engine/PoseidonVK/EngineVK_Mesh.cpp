@@ -102,6 +102,7 @@ void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& s
     _sectionDepthWrite = state.depthWrite;
     if (_sectionShadow)
     {
+        _lighting.fogParams[3] = GScene->GetShadowFogMaxRange();
         _sectionAlphaCutoff = std::max(1, (GetShadowFactor() * 7) >> 4) / 255.f;
         _sectionDepthTest = true;
         _sectionDepthWrite = false;

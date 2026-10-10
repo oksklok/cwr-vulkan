@@ -16,6 +16,10 @@ void main() {
     fogVisibility = lighting.fogParams.z > 0.5 ?
         clamp(1.0 - (distance - lighting.fogParams.x) * lighting.fogParams.y, 0.0, 1.0) : 1.0;
     if (draw.shadow > 0.5) {
+        // Scene::FogExponential, also sampled by software DoShadowLighting.
+        if (lighting.fogParams.z > 0.5 && lighting.fogParams.w > 0.0)
+            fogVisibility = distance >= lighting.fogParams.w ? 0.0 :
+                clamp(exp(2.9957322736 * (lighting.fogParams.x - distance) / lighting.fogParams.w), 0.0, 1.0);
         vertexColor = vec4(1.0); // Material opacity and engine shadow-distance fade only.
         return;
     }

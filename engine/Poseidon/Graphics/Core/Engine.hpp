@@ -454,18 +454,10 @@ class Engine : public IGraphicsEngine
     virtual void EnableReorderQueues(bool enableReorded) {}
     virtual void FlushQueues() {}
 
-    // Shadow pipeline.  Wraps the per-caster shadow draw loop in scene.cpp:
-    //   BeginShadowPass()   — color writes off, stencil REPLACE 0xFF
-    //                          ALWAYS.  Each shadow draw stamps the
-    //                          stencil buffer (alpha-cutout discard
-    //                          via PSShadow's discard).  Idempotent
-    //                          across overlapping casters.
-    //   ...per-caster shadow draws...
-    //   EndShadowPass()     — color writes on, stencil EQUAL 0xFF +
-    //                          KEEP, draw fullscreen quad
-    //                          (1-shadowFactor) blend.  Single uniform
-    //                          darken regardless of overlap, replaces
-    //                          the per-poly INCR/EQUAL-0 dance.
+    // Bracket Scene's engine-generated projected shadow draws between opaque
+    // receivers/surface overlays and the later transparent pass. Backends keep
+    // receiver depth and exclude repeated shadow darkening with stencil;
+    // each polygon carries its engine-computed opacity and texture silhouette.
     virtual void BeginShadowPass() {}
     virtual void EndShadowPass() {}
     // Optional renderer feature: an unsupported backend must decline the pass,
