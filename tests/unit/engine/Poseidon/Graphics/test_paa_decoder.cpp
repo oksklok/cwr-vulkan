@@ -17,6 +17,19 @@
 
 using namespace Poseidon;
 
+#if CWR_HAS_VULKAN
+TEST_CASE("Vulkan CPU pixel lookup clamps like PacLevelMem including the fog horizon sample", "[Graphics][PAADecoder]")
+{
+    const uint8_t rgba[] = {255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 128, 64, 32, 255};
+    TextureVK texture("clamped-pixels", 2, 2, rgba, sizeof(rgba));
+    REQUIRE(texture.GetPixel(0, 1, 1).R() == Catch::Approx(128.f / 255));
+    REQUIRE(texture.GetPixel(0, 1, 1).B() == Catch::Approx(32.f / 255));
+    REQUIRE(texture.GetPixel(0, 2, 2).G() == Catch::Approx(64.f / 255));
+    REQUIRE(texture.GetPixel(0, -0.5f, -0.5f).R() == 1);
+    REQUIRE(texture.GetPixel(0, 0.5f, 0).G() == 1);
+}
+#endif
+
 TEST_CASE("PAADecoder: original memory mip chain preserves sizes pixels alpha and shorter chains", "[Graphics][PAADecoder]")
 {
     // Raw ARGB8888 uses the same PacLevelMem header walk as compressed stock assets.

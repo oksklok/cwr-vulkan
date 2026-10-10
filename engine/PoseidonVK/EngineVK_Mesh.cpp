@@ -19,10 +19,26 @@ void EngineVK::SetBias(int value)
 void EngineVK::SetMaterial(const TLMaterial& mat, const LightList& lights, const render::LegacySpec& spec)
 {
     if (!_activeShape || !vk::SupportedShapeSpec(spec) || !vk::SupportedShapeSpec(render::SplitLegacy(mat.specFlags)))
-        Unsupported("Shape material outside basic unlit diffuse");
+        Unsupported("Shape material outside basic diffuse rendering");
     _materialColor = {1, 1, 1, mat.diffuse.A()};
     vk::ShapeMaterial(_lighting, mat, *GScene->MainLight(),
                       _sunEnabled && !render::Has(spec.material, render::Material::DisableSun));
+    _lighting.localLights = {};
+    int count = 0;
+    const float night =
+        render::Has(spec.material, render::Material::DisableSun) ? 1.f : GScene->MainLight()->NightEffect();
+    if (night > 0)
+        for (int i = 0; i < lights.Size() && count < int(_lighting.localLights.size()); ++i)
+        {
+            if (!lights[i])
+                continue;
+            LightDescription light;
+            lights[i]->GetDescription(light);
+            if (light.type != LTPoint && light.type != LTSpotLight)
+                continue;
+            vk::ShapeLight(_lighting.localLights[count++], light, mat, GScene->GetCamera()->Position(), night);
+        }
+    _lighting.localCount[0] = float(count);
 }
 
 void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& spec)
@@ -51,6 +67,7 @@ void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& s
     _sectionSampler = vk::ShapeSampler(spec);
     vk::ShapeFog(_lighting, GScene->GetFogMinRange(), GScene->GetFogMaxRange(), _fogColor,
                  _shapeFog && !render::Has(spec.routing, render::Routing::FogDisabled | render::Routing::NoDropdown));
+    _lighting.eyeCoef = _vk.EyeCoef();
     _sectionAlphaCutoff = 0;
     _sectionBlend = _materialColor[3] < 1 || _shapeColor[3] < 1;
     if (mip._texture)

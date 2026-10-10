@@ -65,6 +65,39 @@ void EngineVK::DrawLine(int begin, int end)
              NoZWrite | IsAlpha | ClampU | ClampV | IsAlphaFog);
 }
 
+void EngineVK::DrawPoints(int begin, int end)
+{
+    if (!_softwareMesh || begin < 0 || end < begin || end > _softwareMesh->NVertex())
+        throw std::out_of_range("Vulkan points require a transformed mesh range");
+    // GL33's subpixel-weighted two-pixel quads (stars and laser dots).
+    // Reuse transient pages and the screen constants; these are already lit.
+    const float corners[][2] = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+    const int prepared = DisableSun | IsColored | NoShadow | ShadowDisabled | NoDropdown | IsAnimated | ZBiasMask |
+                         SpecLighting | IsLight;
+    for (int index = begin; index < end; ++index)
+    {
+        if (_softwareMesh->Clip(index) & ClipAll)
+            continue;
+        const auto& point = _softwareMesh->GetVertex(index);
+        if (point.color.A8() < 8)
+            continue;
+        const float x = std::floor(point.pos.X()), y = std::floor(point.pos.Y());
+        const float fx = point.pos.X() - x, fy = point.pos.Y() - y;
+        Vertex2DAbs vertices[4];
+        for (int i = 0; i < 4; ++i)
+        {
+            vertices[i].x = x + 0.5f + 2 * corners[i][0];
+            vertices[i].y = y + 0.5f + 2 * corners[i][1];
+            vertices[i].z = point.pos.Z();
+            vertices[i].w = point.rhw;
+            const float alpha = (corners[i][0] ? fx : 1 - fx) * (corners[i][1] ? fy : 1 - fy) * point.color.A8();
+            vertices[i].color = PackedColorRGB(point.color, std::clamp(toInt(alpha), 0, 255));
+        }
+        SubmitScreen(_softwareMip, vertices, 4, Rect2DAbs(0, 0, _width, _height),
+                     (_softwareFlags & ~prepared) | FogDisabled);
+    }
+}
+
 void EngineVK::DrawLine(const Line2DAbs& line, PackedColor first, PackedColor second, const Rect2DAbs& clip)
 {
     const float dx = line.end.x - line.beg.x, dy = line.end.y - line.beg.y;
@@ -111,7 +144,8 @@ void EngineVK::DrawPoly(const MipInfo& mip, const Vertex2DAbs* vertices, int n, 
 {
     SubmitScreen(mip, vertices, n, clip, flags);
 }
-void EngineVK::SubmitScreen(const MipInfo& mip, const Vertex2DAbs* vertices, int n, const Rect2DAbs& clip, int flags, float fog)
+void EngineVK::SubmitScreen(const MipInfo& mip, const Vertex2DAbs* vertices, int n, const Rect2DAbs& clip, int flags,
+                            float fog)
 {
     const int allowed = NoZBuf | NoZWrite | IsAlpha | IsTransparent | IsAlphaFog | ClampU | ClampV | NoClamp |
                         PointSampling | BestMipmap | FogDisabled;

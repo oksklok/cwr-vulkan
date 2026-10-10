@@ -636,3 +636,24 @@ were inspected on RTX, with resize/minimize/restore and clean close (1594 and
 692 submissions, zero validation issues). Ninjas GL33 reference brightness and
 colors remain close. Eight focused cases/66 assertions and policy CTest pass.
 Evidence: `build/lighting-live/{m3-fog,m3-convoy,reference-fog}`.
+
+Night-eye color response now follows GL33's engine-provided coefficients,
+before fog/gamma; the world resets it for HUD/menu drawing. Native Shapes support
+up to eight engine-selected point/reflector lights, with GL33's night/material
+modulation, attenuation and cone conventions. Stars use the engine's already-lit
+screen points as subpixel-weighted quads; moon/flares consume software TL lighting.
+Shadow Killer now launches rather than failing on DrawPoints/SpecLighting, and
+its stars, moon, terrain and weapon darkness match the inspected GL33 capture.
+Helitrain clear morning, Ninjas dawn fog, Heavy Metal dusk and an isolated
+03:00 Take the Car copy were inspected against GL33 (stock missions unchanged).
+The night town receives real local lights (246 light contributions/frame in the
+sampled view) and has zero settled GPU allocations/texture uploads.
+
+A live mission-command test changes visibility 900 -> 300 -> 900 and then fog
+to 0.8. Recorded ranges change to 84..280, 264..880 and 64.8..216 metres. It caught
+TextureVK's CPU GetPixel wrapping (1,1) to blue sky instead of clamping to the
+horizon as PacLevelMem does. Correcting that produces the same grey distant
+terrain as GL33. This does not change GPU repeat/clamp sampling. The corrected
+run passed resize/restore/close with zero validation issues. Focused ON/OFF
+checks pass (53/52 cases, 4776/4726 assertions), plus 89 driver-free policy checks.
+Evidence: `build/lighting-live/{m4-*,reference-night*,reference-day,reference-visibility}`.

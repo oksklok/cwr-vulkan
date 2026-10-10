@@ -21,7 +21,8 @@ void EngineVK::PrepareTriangle(const MipInfo& mip, int flags)
 {
     const int allowed = NoZBuf | NoZWrite | IsAlpha | IsTransparent | ClampU | ClampV | NoClamp | PointSampling |
                         BestMipmap | FogDisabled | DisableSun | IsColored | NoShadow | IsAlphaOrdered | NoDropdown |
-                        IsAlphaFog | OnSurface | IsOnSurface | ShadowDisabled | NoTexMerger | IsAnimated | ZBiasMask;
+                        IsAlphaFog | OnSurface | IsOnSurface | ShadowDisabled | NoTexMerger | IsAnimated | ZBiasMask |
+                        SpecLighting | IsLight; // Lighting of moon/flares is already done by TLVertexTable.
     if (flags & ~allowed)
     {
         LOG_ERROR(Graphics, "Vulkan software section has unsupported flags 0x{:x}", flags & ~allowed);
@@ -79,8 +80,8 @@ void EngineVK::SubmitSoftware(const std::vector<uint32_t>& indices)
         _softwareVertices[index] = vk::ScreenGeometry(vertex, _width, _height);
         // TL already contains the scene Fog8 visibility in specular.a. Alpha
         // fog is already in color.a; it must not also get an RGB fog mix.
-        _softwareVertices[index].fog = (_softwareFlags & (FogDisabled | NoDropdown | IsAlphaFog)) ?
-            1.f : float(source.specular >> 24) / 255;
+        _softwareVertices[index].fog =
+            (_softwareFlags & (FogDisabled | NoDropdown | IsAlphaFog)) ? 1.f : float(source.specular >> 24) / 255;
     }
     auto mesh = _vk.UploadTransientMesh(_softwareVertices.data(), _softwareVertices.size() * sizeof(vk::ScreenVertex),
                                         indices.data(), indices.size() * sizeof(uint32_t));
@@ -97,8 +98,8 @@ void EngineVK::SubmitSoftware(const std::vector<uint32_t>& indices)
     const bool blend = alpha == AlphaStats::Blend || (_softwareFlags & (IsAlpha | IsAlphaFog)) != 0;
     const float cutoff = blend ? 1.f / 255 : alpha == AlphaStats::Cutout ? 0.5f : 0;
     _vk.DrawMesh(mesh.buffers, 0, indices.size(), false, {}, {1, 1, 1, 1}, image,
-                 vk::ShapeSampler(render::SplitLegacy(_softwareFlags)), cutoff, blend,
-                 true, (_softwareFlags & NoZBuf) == 0, nullptr, {}, 1, {0, -1, 0}, mesh.vertexOffset, mesh.indexOffset,
+                 vk::ShapeSampler(render::SplitLegacy(_softwareFlags)), cutoff, blend, true,
+                 (_softwareFlags & NoZBuf) == 0, nullptr, {}, 1, {0, -1, 0}, mesh.vertexOffset, mesh.indexOffset,
                  (_softwareFlags & NoZWrite) == 0);
 }
 void EngineVK::EndMesh(TLVertexTable& mesh)

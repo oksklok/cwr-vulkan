@@ -105,8 +105,10 @@ Color TextureVK::GetPixel(int level, float u, float v) const
     if (level < 0 || level >= ANMipmaps())
         throw std::out_of_range("Vulkan texture mip index");
     const auto& pixels = level ? _lowerPixels[level - 1] : _pixels;
-    const int x = int((u - std::floor(u)) * pixels.width);
-    const int y = int((v - std::floor(v)) * pixels.height);
+    // Match PacLevelMem::GetPixel's clamped CPU lookup. Scene samples (1,1)
+    // for horizon/fog color; wrapping would incorrectly select the blue zenith.
+    const int x = std::clamp(int(std::floor(u * pixels.width)), 0, pixels.width - 1);
+    const int y = std::clamp(int(std::floor(v * pixels.height)), 0, pixels.height - 1);
     const auto* pixel = pixels.rgba.data() + (y * pixels.width + x) * 4;
     return Color(pixel[0] / 255.f, pixel[1] / 255.f, pixel[2] / 255.f, pixel[3] / 255.f);
 }

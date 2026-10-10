@@ -315,6 +315,10 @@ int main()
         CheckThrows<std::logic_error>([&] { context.DrawMesh({}, 0, 3, true, matrix, color); },
                                       "mesh draw without a frame/buffers must fail before Vulkan calls");
         context.EndFrame();
+        context.SetNightEye(1);
+        Check(context.EyeCoef() == std::array<float, 4>{0.2f, 0.9f, 0.4f, 0}, "night eye coefficients match GL33");
+        context.SetNightEye(0);
+        Check(context.EyeCoef() == std::array<float, 4>{0, 0, 0, 1}, "day and HUD disable night eye");
         context.WaitIdle();
         context.Shutdown();
         context.Shutdown();

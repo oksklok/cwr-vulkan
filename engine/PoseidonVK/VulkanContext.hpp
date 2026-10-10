@@ -88,6 +88,11 @@ class VulkanContext
     void SetGamma(float gamma) { _gamma = gamma; }
     float Gamma() const { return _gamma; }
     void SetFogColor(const std::array<float, 4>& color) { _fogColor = color; }
+    void SetNightEye(float night)
+    {
+        _eyeCoef = night > 0.01f ? std::array<float, 4>{0.2f, 0.9f, 0.4f, 1 - night} : std::array<float, 4>{0, 0, 0, 1};
+    }
+    const std::array<float, 4>& EyeCoef() const { return _eyeCoef; }
 
   private:
     // Opt-in bounded measurement, not a scheduler or frame-time governor.
@@ -96,7 +101,8 @@ class VulkanContext
         bool enabled = false;
         double lastEnd = 0, frameStart = 0;
         double recordMs = 0, geometryMs = 0, textureMs = 0, fenceMs = 0, retireMs = 0, acquireMs = 0, presentMs = 0;
-        uint64_t transient = 0, allocations = 0, textureUploads = 0;
+        uint64_t transient = 0, allocations = 0, textureUploads = 0, litDraws = 0, localLights = 0;
+        std::array<float, 2> fogRange{};
         std::vector<double> times;
     } _profile;
     static double ProfileClock()
@@ -152,6 +158,7 @@ class VulkanContext
     uint32_t _uniformAlignment = 16;
     void BindLighting(const ShapeLighting& lighting, bool screen);
     std::array<float, 4> _fogColor{};
+    std::array<float, 4> _eyeCoef{0, 0, 0, 1};
     std::array<VkSampler, 8> _textureSamplers{};
     void CreateTextureLayout();
     VkSwapchainKHR _swapchain = VK_NULL_HANDLE;

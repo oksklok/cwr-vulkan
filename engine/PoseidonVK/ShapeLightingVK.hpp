@@ -31,4 +31,16 @@ inline void ShapeFog(ShapeLighting& out, float start, float end, ColorVal color,
     out.fogParams = {start, end > start ? 1.f / (end - start) : 0, enabled ? 1.f : 0.f, 0};
     out.fogColor = {color.R(), color.G(), color.B(), 1};
 }
+inline void ShapeLight(ShapeLocalLight& out, const LightDescription& light, const TLMaterial& material,
+                       Vector3Par camera, float night)
+{
+    const auto position = light.pos - camera;
+    const auto direction = light.dir.Normalized();
+    const auto diffuse = light.diffuse * material.diffuse * night;
+    const auto ambient = light.ambient * material.ambient * night;
+    out.position = {position.X(), position.Y(), position.Z(), light.startAtten};
+    out.direction = {direction.X(), direction.Y(), direction.Z(), light.type == LTSpotLight ? 1.f : 0.f};
+    out.diffuse = {diffuse.R(), diffuse.G(), diffuse.B(), 0};
+    out.ambient = {ambient.R(), ambient.G(), ambient.B(), 0};
+}
 } // namespace Poseidon::vk

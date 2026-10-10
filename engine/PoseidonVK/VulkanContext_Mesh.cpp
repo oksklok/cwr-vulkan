@@ -260,11 +260,22 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     if (!pipeline)
         CreateShapePipeline(blend, screen, depthTest, depthWrite);
     if (lighting)
+    {
         BindLighting(*lighting, false);
+        if (_profile.enabled)
+        {
+            ++_profile.litDraws;
+            _profile.localLights += uint64_t(lighting->localCount[0]);
+            _profile.fogRange = {lighting->fogParams[0],
+                                 lighting->fogParams[0] +
+                                     (lighting->fogParams[1] > 0 ? 1 / lighting->fogParams[1] : 0)};
+        }
+    }
     else
     {
         ShapeLighting unlit;
         unlit.fogColor = _fogColor;
+        unlit.eyeCoef = _eyeCoef;
         BindLighting(unlit, true);
     }
     auto& frame = _frames[_frame];
@@ -310,8 +321,8 @@ void VulkanContext::BindLighting(const ShapeLighting& lighting, bool screen)
     auto& cache = screen ? frame.screenUniform : frame.nativeUniform;
     if (cache.set && std::memcmp(&cache.value, &lighting, sizeof(lighting)) == 0)
     {
-        vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 2, 1,
-            &cache.set, 1, &cache.offset);
+        vkCmdBindDescriptorSets(frame.command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 2, 1, &cache.set, 1,
+                                &cache.offset);
         return;
     }
     for (;; ++frame.uniformPage)

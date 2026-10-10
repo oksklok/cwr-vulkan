@@ -703,12 +703,13 @@ void VulkanContext::ReportProfile()
         "Vulkan profile: frames=%zu fps=%.2f frame_ms=%.3f p95_ms=%.3f record_ms=%.3f "
         "transient/frame=%.1f allocations/frame=%.1f geometry_upload_ms/frame=%.3f "
         "texture_uploads=%llu texture_upload_ms=%.3f fence_ms/frame=%.3f retire_ms/frame=%.3f acquire_ms/frame=%.3f "
-        "present_ms/frame=%.3f\n",
+        "present_ms/frame=%.3f lit_draws/frame=%.1f local_lights/frame=%.1f fog_range=%.1f..%.1f\n",
         times.size(), frames * 1000 / total, total / frames, times[size_t((times.size() - 1) * 0.95)],
         _profile.recordMs / frames, _profile.transient / frames, _profile.allocations / frames,
         _profile.geometryMs / frames, static_cast<unsigned long long>(_profile.textureUploads), _profile.textureMs,
         _profile.fenceMs / frames, _profile.retireMs / frames, _profile.acquireMs / frames,
-        _profile.presentMs / frames);
+        _profile.presentMs / frames, _profile.litDraws / frames, _profile.localLights / frames,
+        _profile.fogRange[0], _profile.fogRange[1]);
     const double last = _profile.lastEnd;
     _profile = {};
     _profile.enabled = true;

@@ -11,10 +11,6 @@ namespace Poseidon
                            " is not implemented; use --render gl33 for game rendering");
 }
 
-void EngineVK::DrawPoints(int, int)
-{
-    Unsupported("points");
-}
 void EngineVK::EmitDraw(const render::frame::Draw&)
 {
     Unsupported("indexed draw emission");

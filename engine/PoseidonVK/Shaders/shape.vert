@@ -15,8 +15,29 @@ void main() {
     float NdotL = max(0.0, dot(worldNormal, -lighting.sunDirection.xyz));
     vec3 color = lighting.emissive.rgb +
         (lighting.ambient.rgb + lighting.diffuse.rgb * NdotL) * lighting.ambient.w;
-    vertexColor = vec4(clamp(color, 0.0, 1.0), 1.0);
     vec3 relativeWorld = (lighting.world * vec4(position, 1.0)).xyz;
+    // Engine-selected point/reflector lights, matching GL33's falloff/cone.
+    for (int i = 0; i < int(lighting.localCount.x); ++i) {
+        ShapeLocalLight light = lighting.localLights[i];
+        vec3 toLight = light.position.xyz - relativeWorld;
+        float size2 = dot(toLight, toLight);
+        float start2 = light.position.w * light.position.w;
+        if (size2 >= start2 * 100.0) continue;
+        float cone = 1.0;
+        if (light.direction.w > 0.5) {
+            float inside = -dot(toLight, light.direction.xyz);
+            if (inside <= 0.0) continue;
+            float cos2 = inside * inside / max(size2, 1e-8);
+            if (cos2 < 0.95677279) continue;
+            cone = clamp((cos2 - 0.95677279) / (0.98063081 - 0.95677279), 0.0, 1.0);
+        }
+        float attenuation = size2 >= start2 ? start2 / max(size2, 1e-8) : 1.0;
+        float cosine = dot(toLight, worldNormal);
+        color += cosine > 0.0 ?
+            (light.diffuse.rgb * cosine * inversesqrt(max(size2, 1e-8)) + light.ambient.rgb) * attenuation * cone :
+            light.ambient.rgb * attenuation;
+    }
+    vertexColor = vec4(clamp(color, 0.0, 1.0), 1.0);
     float distance = length(relativeWorld); // World is already camera-relative.
     fogVisibility = lighting.fogParams.z > 0.5 ?
         clamp(1.0 - (distance - lighting.fogParams.x) * lighting.fogParams.y, 0.0, 1.0) : 1.0;

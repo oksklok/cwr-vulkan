@@ -37,7 +37,7 @@ TEST_CASE("Vulkan native normals use inverse transpose and materials use the eng
     vk::ShapeMaterial(lighting, material, sun, false);
     REQUIRE(lighting.ambient[3] == 0);
     REQUIRE(lighting.emissive[0] == Catch::Approx(0.1f));
-    REQUIRE(sizeof(vk::ShapeLighting) == 208);
+    REQUIRE(sizeof(vk::ShapeLighting) == 752);
 }
 
 TEST_CASE("Vulkan screen pipeline keys keep every depth blend combination independent", "[Graphics][vulkan-shape]")
@@ -64,6 +64,30 @@ TEST_CASE("Vulkan fog constants preserve scene range color and disabled state", 
     REQUIRE(lighting.fogParams[2] == 0);
     vk::ShapeFog(lighting, 0, 0, HWhite, true);
     REQUIRE(lighting.fogParams[1] == 0);
+}
+
+TEST_CASE("Vulkan local lights retain engine attenuation and camera-relative material response", "[Graphics][vulkan-shape]")
+{
+    LightDescription light;
+    light.type = LTSpotLight;
+    light.pos = Vector3(1002, 205, 3007);
+    light.dir = Vector3(0, 0, 2);
+    light.startAtten = 20;
+    light.diffuse = Color(1, 0.5f, 0.25f);
+    light.ambient = Color(0.2f, 0.3f, 0.4f);
+    TLMaterial material;
+    material.diffuse = Color(0.5f, 0.5f, 0.5f);
+    material.ambient = Color(0.1f, 0.1f, 0.1f);
+    vk::ShapeLocalLight packed;
+    vk::ShapeLight(packed, light, material, Vector3(1000, 200, 3000), 0.5f);
+    REQUIRE(packed.position == std::array<float, 4>{2, 5, 7, 20});
+    REQUIRE(packed.direction == std::array<float, 4>{0, 0, 1, 1});
+    REQUIRE(packed.diffuse[1] == Catch::Approx(0.125f));
+    REQUIRE(packed.ambient[2] == Catch::Approx(0.02f));
+    light.type = LTPoint;
+    vk::ShapeLight(packed, light, material, VZero, 0);
+    REQUIRE(packed.direction[3] == 0);
+    REQUIRE(packed.diffuse[0] == 0);
 }
 
 TEST_CASE("Vulkan screen packing preserves pixels UV depth reciprocal W and ARGB", "[Graphics][vulkan-shape]")

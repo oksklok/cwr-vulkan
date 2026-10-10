@@ -38,6 +38,7 @@ class EngineVK final : public Engine
         _fogColor = color;
         _vk.SetFogColor({color.R(), color.G(), color.B(), 1});
     }
+    void EnableNightEye(float night) override { _vk.SetNightEye(_nightVision ? 0 : night); }
     void HandleEvents() override;
     bool IsOpen() const override { return !_failed && _events.IsOpen(); }
     void SetMouseGrab(bool grab) override { _events.SetMouseGrab(grab); }
