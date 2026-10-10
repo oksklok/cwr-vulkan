@@ -1373,10 +1373,12 @@ for the corresponding P8/1555/compressed source families. Other formats retain
 their existing path. A focused test compares the helper directly against
 PacLevelMem::Interpolate over representative channel values and weather factors.
 
-Importantly, GL33's CPU GetPixel/GetColor sky/fog calculation interpolates the
+Importantly, GL33's CPU GetPixel sky/fog calculation interpolates the
 source colors separately from its quantized GPU upload. Vulkan now retains
 those source references/factor too, so matching the visible texture does not
-quantize the scene's fog color. Existing image-version/frame-fence ownership,
+quantize the scene's fog color. Average-color metadata also remains unquantized;
+this does not implement GL33's source-header average-color policy.
+Existing image-version/frame-fence ownership,
 the 1/64 update tolerance, endpoint selection and single-level sky policy are
 unchanged. Stock files, sky geometry and weather animation are untouched.
 
@@ -1398,3 +1400,78 @@ Atmospheric parity is partial: GL33 applies gamma after framebuffer composition,
 whereas Vulkan applies it per fragment before alpha blending. That remains a
 specific compositing difference for translucent clouds/effects at non-unit gamma,
 not evidence for altering original weather brightness or alpha thresholds.
+
+### Final visual-pass verification
+
+The final executable (SHA256 `A8249CC6ACA358A515956D5AA62B1E4E4374E8B2631D92AD11189E5881066A6E`)
+was tested against the saved baseline executable
+(`95555F63812F55F9DED61C60C2BBD3FF890BF534E8241F41011221A8E8E34B12`),
+using the isolated GOG 3.05 data/profile, RTX 4060 Ti and 800x600 window.
+`visual-perf-{road,water}-{before,final}-{on,off}` contains the existing matched
+camera sampler's logs and screenshots. Each number below is the mean of the
+first three complete two-second intervals with zero allocations/texture uploads;
+loading intervals are excluded. VSync/profile settings are unchanged.
+
+| Scene / validation | FPS before -> final | Frame ms | Recording ms | Geometry upload ms |
+| --- | --- | --- | --- | --- |
+| HMMWV oblique road / on | 131.20 -> 138.52 | 7.623 -> 7.219 | 7.387 -> 6.971 | 0.187 -> 0.142 |
+| HMMWV oblique road / off | 158.46 -> 158.54 | 6.311 -> 6.308 | 6.079 -> 6.077 | 0.177 -> 0.140 |
+| Infantry coast / on | 158.55 -> 158.71 | 6.307 -> 6.301 | 6.055 -> 6.058 | 0.007 -> 0.006 |
+| Infantry coast / off | 158.43 -> 158.60 | 6.312 -> 6.305 | 6.028 -> 6.027 | 0.006 -> 0.006 |
+
+These support no observed steady-rendering regression, not a claimed speedup.
+The road's mission/shadow workload varies between launches (615 lit draws but
+91 versus zero software-shadow draws in these intervals). The baseline repeat
+`visual-perf-*-repeat-before-*` also exhibits that variation. Later intervals in
+both binaries sometimes reach roughly 9-12 ms while recording remains around
+6 ms and p95 near 6.2 ms; those application/frame-pacing stalls remain in the
+logs and are not assigned to this patch. Validation-off steady samples are
+presentation-limited, so they do not measure uncapped GPU headroom. Settled
+transient allocations remain zero. Batching, state caching and draw order were
+not redesigned or optimized in this pass.
+
+Actual final Vulkan gameplay evidence (`build/shadow-live/visual-game-*`):
+
+- Infantry: movement, camera turn, aim/fire/reload, two grenade throws and visible
+  blast/smoke, soldier shadow, map opening/zoom/pan/closing, pause/resume,
+  960x640 resize/minimize/restore and Mission Abort. Abort exits this test-mission
+  launch normally; 16,563 submitted frames, zero validation findings.
+- Take the Car: movement, aiming/firing/reload, buildings and vegetation, HUD/map,
+  pause/resume, 900x650 resize/minimize/restore, normal close; 4,262 frames, zero.
+- HMMWV: cockpit/windshield and third-person views, about 22 m of driving,
+  braking, dust, fence/vehicle shadows, HUD/map, pause/resume and resize/restore;
+  normal close, 5,144 frames, zero.
+- Heavy Metal (`visual-game-heavy2`): on-foot movement and stock M1 tank views;
+  the existing harness placed the player in the driver's seat, followed by
+  keyboard driving/braking, vehicle shadows, map, pause/resume and resize/restore.
+  Normal close: 9,352 frames, zero. An earlier unsupported `assignedVehicle`
+  diagnostic caused a script-error exit and is excluded, not a renderer failure.
+- Shadow Killer: stars/moon and dark foliage, night-vision toggle, movement,
+  aiming/firing, HUD/map, pause/resume and resize/restore. Normal close:
+  14,205 frames, zero. Default GL33's matching starting view and night vision
+  are captured in `visual-game-shadow-gl33-repeat` (normal exit 0).
+
+Core/synchronization validation was enabled through each accepted Vulkan
+shutdown. Grenade blast smoke and vehicle dust were observed; a runtime
+SmokeShell selection attempt did not produce a dedicated smoke-grenade throw,
+so that particular effect is not claimed as tested. No mission files were edited.
+Additional fixed noon cameras `visual-matched-{takecar,heavy}-{vk,gl33}` compare
+the same buildings, foliage, M1 tank, shadows and sky with identical time,
+weather, visibility and settings. These complement the HMMWV/Infantry sweeps
+above; ordinary initial mission positions alone were not treated as matched.
+
+Both builds pass. Final focused runs pass 459 assertions / 36 cases ON and
+454 / 35 OFF; stock mip checks pass 265 / 173 assertions, and the driver-free
+suite passes 269 guards (including its intentional mocked teardown error).
+Final menu/intro captures `visual-final-menu-{vk,gl33,gl33-only}` render normally
+and reach timed exit 0; Vulkan records 1,509 frames with zero validation findings.
+Both executables still select GL33 when no renderer option is supplied.
+The 7,606 protected stock/resource files retain their original count, lengths
+and modification times; localization and assets are untouched. No white
+shoreline patches or AI88 road banding returned in the inspected scenes.
+
+Completed fixes are reverse-face rejection, native material specular and packed
+sky interpolation. Foliage residency/coverage and atmospheric compositing are
+still partial, not solved milestones. Highest-value next visual-parity work:
+match GL33's framebuffer-level gamma/composition ordering for translucent
+clouds/effects, with matched non-unit-gamma captures before extending scope.
