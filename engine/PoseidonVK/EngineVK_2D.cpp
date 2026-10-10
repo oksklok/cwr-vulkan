@@ -91,6 +91,8 @@ void EngineVK::DrawPoints(int begin, int end)
             vertices[i].y = y + 0.5f + 2 * corners[i][1];
             vertices[i].z = point.pos.Z();
             vertices[i].w = point.rhw;
+            vertices[i].u = 0.0f;
+            vertices[i].v = 0.0f;
             const float alpha = (corners[i][0] ? fx : 1 - fx) * (corners[i][1] ? fy : 1 - fy) * point.color.A8();
             vertices[i].color = PackedColorRGB(point.color, std::clamp(toInt(alpha), 0, 255));
         }
