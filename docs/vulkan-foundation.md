@@ -1585,3 +1585,57 @@ slider 1.0 -> 1.6 -> 0.6 -> 1.0, including resize/restore at 0.6; the setting an
 whole-frame brightness update visibly without stale/black frames. Normal close:
 9095 frames, zero validation findings. GL33 drawing code remains untouched and
 Vulkan remains opt-in. Broader effect/gameplay/performance verification follows.
+
+### Cloud and translucent-effect comparison
+
+The same six sky views were compared before/after against GL33. Selected sky-crop
+mean absolute RGB errors (8-bit levels; smaller is closer) are:
+
+| View | Gamma | Before | After |
+| --- | ---: | ---: | ---: |
+| Partial sunset | 1.0 | 1.953 | 1.807 |
+| Partial sunset | 0.6 | 4.670 | 1.460 |
+| Partial sunset | 1.6 | 2.393 | 1.542 |
+| Heavy overcast | 1.0 | 5.721 | 5.273 |
+| Heavy overcast | 0.6 | 8.459 | 5.065 |
+| Heavy overcast | 1.6 | 4.288 | 4.111 |
+| Foggy dawn | 0.6 | 1.461 | 0.995 |
+| Moon-facing night | 1.6 | 1.140 | 0.454 |
+
+All six crops improve in these runs at all three settings, but this is not a
+deterministic image test. In particular, the small gamma-1 movement is capture
+variation, not a claim that identity gamma fixes clouds. The identity shader
+copies the same normalized scene color without a power operation. No visible
+gamma-1 transparency, horizon, shoreline or HUD regression was found.
+
+Shared Landscape::DrawClouds builds the same layered software geometry and
+TLVertexTable::DoCloudLighting supplies cloud brightness, alpha and alpha-fog
+to both backends. Weather::MoveClouds advances cloud position by speed * deltaT;
+freezing after different loading intervals does not make positions identical.
+This explains shifted cloud features, but does not establish the entire cause
+of the remaining heavy-overcast RGB difference. That residual is not assigned
+to gamma, nor concealed with a cloud-color/opacity adjustment. Existing texture
+detail/LOD differences elsewhere also remain outside this fix.
+
+`gamma-effects2-{before,after,gl33}-{10,06,16}/smoke-plume.png` captures actual
+SmokeShell plumes at the same coastal camera and weather. Runtime inventory
+queries verified that a mouse throw consumed SmokeShell; merely selecting or
+issuing a script fire command was not counted. The corrected smoke blends with
+the already-composed shoreline/sea before gamma, with no opaque replacement,
+missing layers or new edge halo. Particle positions/ages differ, so no numerical
+smoke-parity score is claimed. Rectangular billboard edges are also visible in
+GL33 and are not evidence for changing Vulkan alpha thresholds. Initial
+`gamma-effects-*` selection-only captures are excluded. The 0.6 corrected run
+completed via its normal 100-second timeout after a later unsuccessful frag
+grenade attempt; its smoke capture is valid, its frag attempt is not coverage.
+Every corrected smoke run reports zero validation findings through shutdown.
+
+`gamma-material-{vk,gl33}-{10,16}` repeats the HMMWV noon, low-sun, side, night
+and fog views. Glass retains the reference transparency, body lighting/specular
+and projected shadows remain visible, and non-unit gamma affects the completed
+vehicle/background composition. Vulkan normal closes: 2129/2098 frames, zero
+core/synchronization warnings or errors. Smoke HUD/pause captures and the live
+Graphics gamma-slider test retain readable fonts and translucent overlays.
+No additional rendering change was justified by these matched comparisons;
+cloud/weather simulation, alpha thresholds, blend factors and stock assets
+remain untouched.
