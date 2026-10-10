@@ -1777,3 +1777,67 @@ layer investigation: record identical cloud phase, per-layer textures/mips and
 software vertex colors/fog before proposing any additional rendering change.
 Do not compensate for those differences with arbitrary opacity/color tuning or
 a new weather/particle system.
+
+## Cloud and foliage input parity (2026-10-10)
+
+This investigation starts at `24f691f` with a clean working tree. The isolated
+GOG 3.05 data, RTX 4060 Ti, 800x600 window and existing Infantry coastal camera
+are reused. It establishes a capture correction, not a new cloud-rendering fix.
+
+### Matched clouds: phase and camera target both matter
+
+`Weather::MoveClouds` integrates `_cloudsSpeed * deltaT` into `_cloudsPos`.
+Freezing after loading leaves different accumulated positions in each backend.
+A small temporary diagnostic pins only DrawClouds' local `cPos` to 123.25;
+it does not change weather simulation or stock data. It logs layer/model,
+position, azimuth/scale, ordered submissions, texture/resident mip, spec flags,
+transformed positions, UVs and packed CPU colors including alpha-fog.
+
+That phase-only comparison (`build/shadow-live/cloud-phase-{vk,gl33}-10`)
+reduces heavy-overcast sky-crop error from the previous 5.273 to 1.041 /255.
+The remaining transformed Y/Z differences exposed another capture variable:
+`CamSetTargetVec` uses `GetPos`, which adds `SurfaceYAboveWater`. This coastal
+target is over water, so different simulation clocks produce different target
+heights and camera pitches even with identical script coordinates. Identical
+camera position/daytime alone is therefore insufficient evidence of a match.
+
+The existing `triSetSimTime 60` command, after `setAccTime 0` and before camera
+creation/target assignment, removes that variable. With both controls,
+`cloud-locked-{vk,gl33}-{10,06,16}` has identical cloud trace sequences in all
+five weather/time states at all three gamma settings. Heavy overcast includes
+35 candidate Draw calls, 17 surviving software submissions and 68 lit vertices;
+all corresponding positions, UVs and packed RGBA values compare exactly.
+The three layers retain their original ordering, transforms and 0.1 scale.
+The four `mrak_war_{1,3,4,5}.paa` textures all use resident mip 0 in both paths
+(256x128 except `_3`, 256x256). This is not the foliage residency discrepancy.
+
+`DoCloudLighting` supplies identical sunlight/accommodation, brightness and
+alpha, with SkyFog8 already attenuating vertex alpha. Both backend submissions
+use flags `0xac128`: ordinary source-alpha blending, no additional RGB fog,
+1/255 alpha cutoff and the original no-depth-write semantics. GL33's ordered
+alpha queue and Vulkan's immediate software submissions preserve the same
+cloud order. No missing software attribute or cloud-specific shader is needed.
+
+The same sky-only crop x=5..794, y=105..319 gives mean absolute RGB differences
+in 8-bit levels (not full-frame scores):
+
+| Synchronized view | Gamma 1.0 | Gamma 0.6 | Gamma 1.6 |
+| --- | ---: | ---: | ---: |
+| Clear noon | 0.097 | 0.123 | 0.073 |
+| Partial overcast noon | 0.361 | 0.457 | 0.264 |
+| Partial-overcast sunset | 0.408 | 0.385 | 0.351 |
+| Heavy overcast noon | 0.216 | 0.281 | 0.155 |
+| Foggy overcast dawn | 0.120 | 0.127 | 0.100 |
+
+Heavy-overcast gamma-1 error thus falls about 96% relative to the previous
+unsynchronized 5.273 result without changing the renderer. Visual inspection
+agrees: cloud features, translucency, horizon fog and sunset halo align.
+The small residual is not bit-exact parity, but no visible cloud defect has
+been isolated from it. It does not justify color/opacity tuning or changes to
+packed sky interpolation, alpha thresholds, gamma, fog or the weather system.
+Mission subtitles/timing outside the crop remain different and are excluded.
+
+Both diagnostic builds pass. The three synchronized Vulkan sweeps close
+normally with 2791 / 2714 / 2975 submitted frames and zero Khronos core or
+synchronization warnings/errors through shutdown. GL33 references also exit 0.
+These probes are diagnostic-only, not a proposed production rendering change.
