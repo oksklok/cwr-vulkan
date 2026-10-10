@@ -324,6 +324,13 @@ int main()
         Check(teardownContext.Shutdown() == 1 && !teardownContext.Instance(),
               "repeated shutdown must retain the final error count without recreating resources");
 
+        const auto raster = ShapeRasterization(false);
+        Check(raster.cullMode == VK_CULL_MODE_BACK_BIT && raster.frontFace == VK_FRONT_FACE_CLOCKWISE,
+              "native and software/screen geometry must reject the reverse face as GL33 does");
+        Check(raster.polygonMode == VK_POLYGON_MODE_FILL && raster.lineWidth == 1 && !raster.depthBiasEnable,
+              "culling correction must leave fill width and depth bias unchanged");
+        Check(ShapeRasterization(true).cullMode == VK_CULL_MODE_NONE,
+              "projected shadows retain their existing uncullled rasterization");
         VulkanContext context;
         CheckThrows<std::logic_error>([&] { context.DrawDiagnosticTriangle(); },
                                       "indexed draw must require an acquired recording frame");

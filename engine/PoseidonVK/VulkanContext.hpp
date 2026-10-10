@@ -18,6 +18,18 @@ struct TextureMip
     uint32_t width, height;
     const void* rgba;
 };
+inline VkPipelineRasterizationStateCreateInfo ShapeRasterization(bool shadow)
+{
+    VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    // GL33 keeps back-face culling in BOTH native and software/screen passes.
+    // Without it coplanar reverse faces overwrite the front's lighting (fences).
+    // Preserve the existing projected-shadow rasterization.
+    raster.cullMode = shadow ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+    raster.frontFace = VK_FRONT_FACE_CLOCKWISE;
+    raster.lineWidth = 1;
+    return raster;
+}
 inline uint32_t TextureSampledMipCount(std::span<const TextureMip> mips)
 {
     // GL33's TextureSourcePac stops BEFORE either dimension reaches 4 pixels.

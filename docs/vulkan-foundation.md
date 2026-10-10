@@ -1298,3 +1298,31 @@ IsWater/full material-specular support remains limited as documented earlier.
 Highest-value next visual-parity milestone: diagnose the low-sun object-lighting
 difference on the matched HMMWV fence, using GL33 as reference, without further
 global texture sharpening or speculative fog changes.
+
+## Visual parity: fence winding (2026-10-10)
+
+The matched HMMWV dusk fence was not a specular or alpha-threshold defect.
+The stock `data3d\plutek.p3d` uses normal material 0 (specular RGB/power zero),
+with `planky3.paa`/`planky3.pac` blended/cutout sections. The close fence is
+software-transformed; suppressing only that diagnostic draw removed the
+affected pixels. GL33 retains back-face culling in its screen/software pass
+specifically to reject coplanar reverse faces. Vulkan had culling disabled in
+both paths, allowing the sunlit reverse side to overwrite the shaded front.
+
+Native and screen pipelines now use clockwise front faces and back-face culling,
+matching GL33 after the existing Vulkan Y conversion. Projected-shadow pipeline
+rasterization is unchanged. Native-only culling did not fix the fence and was
+not retained as a partial solution. No colors, normals, alpha thresholds, mip
+levels, fog or stock geometry were changed to conceal the artifact.
+
+Evidence under `build/shadow-live/`: `visual-before-fence` versus
+`visual-cull-screen` reproduces/removes the orange dusk face; eight matched
+`visual-fence-final` / `visual-fence-gl33` views cover noon, 18:00 low sun,
+19:00 dusk, 23:00 night, reduced visibility, closer/oblique and reverse views.
+The shaded face now matches GL33; the opposite side remains correctly sunlit.
+Roads, buildings, sky, stars and sun halo remain visible. The Vulkan run closed
+normally with 3,219 submitted/presented frames and zero core/synchronization
+validation errors or warnings. The build passes and 269 driver-free guards
+include new winding/cull/shadow-policy checks. Temporary tracing was removed.
+Foliage silhouette differences remain for separate investigation; these captures
+use GL33's actual 0x-MSAA target, so they must not be attributed to MSAA coverage.

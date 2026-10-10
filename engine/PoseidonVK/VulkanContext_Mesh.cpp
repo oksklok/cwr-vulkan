@@ -201,11 +201,7 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         VkPipelineViewportStateCreateInfo viewport{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
         viewport.viewportCount = viewport.scissorCount = 1;
-        VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-        raster.polygonMode = VK_POLYGON_MODE_FILL;
-        raster.cullMode = VK_CULL_MODE_NONE;
-        raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-        raster.lineWidth = 1;
+        const auto raster = ShapeRasterization(shadow);
         VkPipelineMultisampleStateCreateInfo samples{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
         samples.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
         VkPipelineDepthStencilStateCreateInfo depth{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
