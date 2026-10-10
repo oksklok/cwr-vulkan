@@ -145,6 +145,26 @@ int main()
     using namespace Poseidon::vk;
     try
     {
+        Check(Poseidon::vk::TextureAnisotropy(false, 16) == 1, "unsupported anisotropy falls back");
+        Check(Poseidon::vk::TextureAnisotropy(true, 8) == 8, "anisotropy respects device limit");
+        Check(Poseidon::vk::TextureAnisotropy(true, 32) == 16, "anisotropy matches GL33 cap");
+        for (float anisotropy : {1.f, 8.f, 16.f})
+            for (unsigned i = 0; i < 8; ++i)
+            {
+                const auto sampler = Poseidon::vk::TextureSamplerInfo(i, anisotropy);
+                const bool point = (i & 4) != 0;
+                Check(sampler.minFilter == (point ? VK_FILTER_NEAREST : VK_FILTER_LINEAR) &&
+                          sampler.magFilter == sampler.minFilter, "min/mag filtering");
+                Check(sampler.mipmapMode == (point ? VK_SAMPLER_MIPMAP_MODE_NEAREST : VK_SAMPLER_MIPMAP_MODE_LINEAR),
+                      "mip filtering");
+                Check(bool(sampler.anisotropyEnable) == (!point && anisotropy > 1), "point/fallback anisotropy disabled");
+                Check(sampler.maxAnisotropy == (sampler.anisotropyEnable ? anisotropy : 1), "sampler anisotropy limit");
+                Check(sampler.addressModeU == ((i & 1) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT) &&
+                          sampler.addressModeV == ((i & 2) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT) &&
+                          sampler.addressModeW == VK_SAMPLER_ADDRESS_MODE_REPEAT, "clamp/repeat preserved");
+                Check(sampler.mipLodBias == 0 && sampler.minLod == 0 && sampler.maxLod == VK_LOD_CLAMP_NONE,
+                      "no artificial LOD bias or mip clamp");
+            }
         checks += TestVulkanBuffers();
         checks += TestVulkanCommands();
         Check(sizeof(TriangleVertex) == 20 && sizeof(TriangleIndices[0]) == 2,

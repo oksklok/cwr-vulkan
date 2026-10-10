@@ -18,6 +18,26 @@ struct TextureMip
     uint32_t width, height;
     const void* rgba;
 };
+// The eight existing shared samplers mirror GL33: anisotropic trilinear for
+// linear modes, exact nearest sampling for point modes, no LOD bias.
+inline float TextureAnisotropy(bool supported, float limit)
+{
+    return supported ? std::min(16.f, limit) : 1.f;
+}
+inline VkSamplerCreateInfo TextureSamplerInfo(unsigned index, float anisotropy)
+{
+    VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    const bool point = (index & 4) != 0;
+    sampler.magFilter = sampler.minFilter = point ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
+    sampler.mipmapMode = point ? VK_SAMPLER_MIPMAP_MODE_NEAREST : VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    sampler.anisotropyEnable = !point && anisotropy > 1.f;
+    sampler.maxAnisotropy = sampler.anisotropyEnable ? anisotropy : 1.f;
+    sampler.maxLod = VK_LOD_CLAMP_NONE; // Image view bounds the stored mip chain.
+    sampler.addressModeU = (index & 1) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler.addressModeV = (index & 2) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    return sampler;
+}
 // Shape owners and recorded frames share immutable allocations. Shutdown releases
 // even allocations whose engine-side Shape outlives the Vulkan device.
 struct MeshBuffers
@@ -194,6 +214,7 @@ class VulkanContext
     std::array<float, 4> _fogColor{};
     std::array<float, 4> _eyeCoef{0, 0, 0, 1};
     std::array<VkSampler, 8> _textureSamplers{};
+    float _textureAnisotropy = 1.f;
     void CreateTextureLayout();
     VkSwapchainKHR _swapchain = VK_NULL_HANDLE;
     VkRenderPass _renderPass = VK_NULL_HANDLE;

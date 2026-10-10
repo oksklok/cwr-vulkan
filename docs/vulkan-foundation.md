@@ -1166,3 +1166,23 @@ anisotropy whereas Vulkan currently uses plain trilinear sampling; the observed
 distant-water smoothing is a concrete comparison target, not grounds for a
 speculative global sampler change in this patch. Full material-specular and
 explicit IsWater support remain separate limitations.
+
+## Texture filtering parity (2026-10-10)
+
+The 8b2d705 baseline was reproduced with the existing six Infantry coastal
+camera presets, copied profile and 800x600 (`build/shadow-live/filter-before-water`
+and `filter-gl33-water`). An anisotropy-only A/B (`filter-aniso-water`) removes
+the conspicuous horizontal distant-water smoothing and improves oblique terrain
+detail toward GL33 without reviving the white shoreline artifact.
+
+Vulkan now queries/enables samplerAnisotropy when supported and applies
+min(16, maxSamplerAnisotropy) to the four existing linear samplers. Magnification
+remains linear and minification trilinear, with zero LOD bias and unchanged
+clamp/repeat combinations. Unsupported devices retain trilinear filtering.
+The four point samplers remain nearest/nearest-mip with anisotropy disabled.
+Secondary texture descriptors already use sampler 0 (linear/repeat), independently
+of the primary sampler, matching GL33. No sampler manager/settings or new
+texture versions were added. The RTX 4060 Ti reports 16x; the six-view run closed
+normally with 3,351 submissions and zero core/synchronization validation issues.
+The Vulkan build passes and driver-free guards pass 261 checks, including all
+eight sampler combinations at fallback/8x/16x and capability-limit handling.

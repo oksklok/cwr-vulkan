@@ -46,13 +46,7 @@ void VulkanContext::CreateTextureLayout()
     // Sampling states are device-wide, not eight sampler objects per asset.
     for (unsigned i = 0; i < 8; ++i)
     {
-        VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-        sampler.magFilter = sampler.minFilter = (i & 4) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
-        sampler.mipmapMode = (i & 4) ? VK_SAMPLER_MIPMAP_MODE_NEAREST : VK_SAMPLER_MIPMAP_MODE_LINEAR;
-        sampler.maxLod = VK_LOD_CLAMP_NONE; // Image view bounds naturally clamp valid shorter chains.
-        sampler.addressModeU = (i & 1) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        sampler.addressModeV = (i & 2) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        const auto sampler = TextureSamplerInfo(i, _textureAnisotropy);
         Require(vkCreateSampler(_device, &sampler, nullptr, &_textureSamplers[i]), "create shared sampler");
     }
 }

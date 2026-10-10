@@ -275,6 +275,13 @@ void VulkanContext::CreateDevice(VkSurfaceKHR surface)
     info.pQueueCreateInfos = queues.data();
     info.enabledExtensionCount = static_cast<uint32_t>(enabled.size());
     info.ppEnabledExtensionNames = enabled.data();
+    VkPhysicalDeviceFeatures availableFeatures{}, features{};
+    vkGetPhysicalDeviceFeatures(_physical, &availableFeatures);
+    features.samplerAnisotropy = availableFeatures.samplerAnisotropy;
+    info.pEnabledFeatures = &features;
+    VkPhysicalDeviceProperties properties{};
+    vkGetPhysicalDeviceProperties(_physical, &properties);
+    _textureAnisotropy = TextureAnisotropy(features.samplerAnisotropy, properties.limits.maxSamplerAnisotropy);
     Check(vkCreateDevice(_physical, &info, nullptr, &_device), "create logical device");
     vkGetDeviceQueue(_device, _families.graphics, 0, &_graphics);
     vkGetDeviceQueue(_device, _families.present, 0, &_present);
@@ -287,6 +294,8 @@ void VulkanContext::CreateDevice(VkSurfaceKHR surface)
         Name(VK_OBJECT_TYPE_QUEUE, ObjectHandle(_present), "PoseidonVK present queue");
     CreateFrameResources();
     std::fprintf(stderr, "Vulkan: logical device ready: %s, two frame slots\n", _deviceName.c_str());
+    std::fprintf(stderr, "Vulkan: linear texture anisotropy %.1fx (supported=%u); point samplers unchanged\n",
+                 _textureAnisotropy, features.samplerAnisotropy);
 }
 
 void VulkanContext::Name(VkObjectType type, uint64_t handle, const char* name) const
