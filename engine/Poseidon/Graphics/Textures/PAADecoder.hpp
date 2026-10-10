@@ -40,6 +40,10 @@ DecodedImage DecodePAAFileMip(const std::string& path, int mipLevel);
 // Decode from memory buffer (for embedded/archive use)
 DecodedImage DecodePAABuffer(const void* data, size_t size, bool isPaa);
 
+// Top-level source for packed sky interpolation: DXT1 uses GL33's legacy
+// RGB555 decompression. Ordinary texture decoding must use DecodePAABuffer.
+DecodedImage DecodePAAInterpolationBuffer(const void* data, size_t size, bool isPaa);
+
 // Original stored mip levels, largest first, decoded from one archive/memory source.
 // A valid shorter chain is retained; no resampling or mip generation is performed.
 std::vector<DecodedImage> DecodePAAMipChainBuffer(const void* data, size_t size, bool isPaa);

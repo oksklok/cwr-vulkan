@@ -37,11 +37,13 @@ class TextureVK final : public Texture
   private:
     friend class TextBankVK;
     void RefreshMetadata();
+    const DecodedImage& InterpolationPixels();
     bool _dynamic = false;
     PacFormat _sourceFormat = PacARGB8888;
     Ref<Texture> _interpolateFirst, _interpolateSecond;
     float _interpolateFactor = 0;
     DecodedImage _pixels;
+    DecodedImage _interpolationPixels; // Lazy legacy DXT1 source; never used for ordinary sampling.
     std::vector<DecodedImage> _lowerPixels;
     std::vector<PacLevelMem> _levels;
     AlphaStats::Kind _alpha = AlphaStats::Opaque;

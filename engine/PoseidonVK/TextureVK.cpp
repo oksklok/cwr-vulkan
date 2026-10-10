@@ -138,6 +138,26 @@ std::shared_ptr<vk::TextureImage> TextureVK::Image(vk::VulkanContext& context)
     }
     return _image;
 }
+const DecodedImage& TextureVK::InterpolationPixels()
+{
+    if (_sourceFormat != PacDXT1)
+        return _pixels;
+    if (!_interpolationPixels.valid())
+    {
+        // RGBA8 decoding then truncating to five bits loses the legacy DXT1
+        // rounding. Keep the original sampling/CPU colors and decode a separate
+        // source only when this texture actually participates in sky blending.
+        QIFStreamB file;
+        file.AutoOpen(Name());
+        if (file.fail() || file.rest() == 0)
+            throw std::runtime_error("Vulkan interpolation source could not be opened");
+        auto pixels = DecodePAAInterpolationBuffer(file.act(), file.rest(), TextureKey(Name()).ends_with(".paa"));
+        if (!pixels.valid() || pixels.width != _pixels.width || pixels.height != _pixels.height)
+            throw std::runtime_error("Vulkan interpolation source could not be decoded");
+        _interpolationPixels = std::move(pixels);
+    }
+    return _interpolationPixels;
+}
 TextBankVK::~TextBankVK()
 {
     UnlockAllTextures();
@@ -178,10 +198,12 @@ Ref<Texture> TextBankVK::LoadInterpolated(RStringB first, RStringB second, float
     Ref<Texture> a = Load(first), b = Load(second);
     if (!a || !b)
         throw std::invalid_argument("Vulkan interpolation requires two textures");
-    const auto& p = static_cast<TextureVK*>(a.GetRef())->Pixels();
-    const auto& q = static_cast<TextureVK*>(b.GetRef())->Pixels();
     const bool packed = vk::InterpolatesRGB555(static_cast<TextureVK*>(a.GetRef())->_sourceFormat) &&
                         vk::InterpolatesRGB555(static_cast<TextureVK*>(b.GetRef())->_sourceFormat);
+    const auto& p = packed ? static_cast<TextureVK*>(a.GetRef())->InterpolationPixels() :
+                             static_cast<TextureVK*>(a.GetRef())->Pixels();
+    const auto& q = packed ? static_cast<TextureVK*>(b.GetRef())->InterpolationPixels() :
+                             static_cast<TextureVK*>(b.GetRef())->Pixels();
     const int coefficient = std::clamp(int(std::floor(factor * 256)), 0, 255);
     std::vector<uint8_t> rgba(p.rgba.size());
     for (int y = 0; y < p.height; ++y)

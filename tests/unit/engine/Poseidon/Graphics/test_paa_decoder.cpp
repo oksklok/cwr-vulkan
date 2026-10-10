@@ -11,6 +11,8 @@
 #include <vector>
 #include "test_fixtures.hpp"
 #include <Poseidon/Graphics/Textures/PAADecoder.hpp>
+#include <Poseidon/Graphics/Rendering/Font/Pactext.hpp>
+#include <array>
 #include <Poseidon/IO/Streams/QBStream.hpp>
 #include <cstdlib>
 #include <stddef.h>
@@ -18,6 +20,46 @@
 #include <vector>
 
 using namespace Poseidon;
+
+TEST_CASE("PAADecoder: interpolation-only DXT1 decode matches legacy blocks", "[Graphics][PAADecoder]")
+{
+    // Four-color, three-color/transparent and equal-endpoint blocks, all selectors.
+    for (auto endpoints : {std::array<uint16_t, 2>{0x1000, 0}, {0x003f, 0xf800},
+                           {0x1234, 0x1234}, {0xffff, 0x0801}})
+        for (int width : {2, 8})
+        {
+            const std::array<uint16_t, 4> block{endpoints[0], endpoints[1], 0xe4e4, 0xe4e4};
+            uint16_t reference[16];
+            PacLevelMem::DecompressDXT1(reference, block.data(), 4, 4);
+            std::vector<uint8_t> bytes{1, 255, 0, 0, uint8_t(width), 0, 2, 0,
+                                       uint8_t(((width + 3) / 4) * 8), 0, 0};
+            for (int x = 0; x < width; x += 4)
+                for (uint16_t word : block)
+                {
+                    bytes.push_back(uint8_t(word));
+                    bytes.push_back(uint8_t(word >> 8));
+                }
+            const auto normal = DecodePAABuffer(bytes.data(), bytes.size(), true);
+            const auto image = DecodePAAInterpolationBuffer(bytes.data(), bytes.size(), true);
+            REQUIRE(image.valid());
+            REQUIRE(image.width == width);
+            REQUIRE(image.height == 2);
+            for (int y = 0; y < 2; ++y)
+                for (int x = 0; x < width; ++x)
+                {
+                    const uint16_t pixel = reference[y * 4 + x % 4];
+                    for (int c = 0; c < 3; ++c)
+                    {
+                        const int value = (pixel >> (10 - c * 5)) & 31;
+                        REQUIRE(image.rgba[(y * width + x) * 4 + c] == ((value << 3) | (value >> 2)));
+                    }
+                    REQUIRE(image.rgba[(y * width + x) * 4 + 3] == ((pixel & 0x8000) ? 255 : 0));
+                }
+            REQUIRE(DecodePAABuffer(bytes.data(), bytes.size(), true).rgba == normal.rgba);
+            bytes.pop_back();
+            REQUIRE_FALSE(DecodePAAInterpolationBuffer(bytes.data(), bytes.size(), true).valid());
+        }
+}
 
 TEST_CASE("PAADecoder: AI88 preserves all intensity and alpha bits in every stored mip", "[Graphics][PAADecoder]")
 {
@@ -73,6 +115,40 @@ TEST_CASE("PAADecoder: AI88 preserves all intensity and alpha bits in every stor
 }
 
 #if CWR_HAS_VULKAN
+TEST_CASE("Vulkan DXT1 sky interpolation preserves legacy source quantization", "[Graphics][PAADecoder]")
+{
+    struct TemporarySky
+    {
+        std::filesystem::path path;
+        ~TemporarySky() { std::error_code ec; std::filesystem::remove(path, ec); }
+    } first{std::filesystem::temp_directory_path() /
+            ("cwr-sky-first-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".paa")},
+      second{first.path.string() + "-second.paa"};
+    // One 4x4 DXT1 block, endpoints red=2 and black, selecting color 2.
+    // Modern RGBA8 decode gives red 11; GL33's legacy 1555 decode gives 2/31.
+    std::vector<uint8_t> bytes{1, 255, 0, 0, 4, 0, 4, 0, 8, 0, 0,
+                               0, 16, 0, 0, 170, 170, 170, 170, 0, 0, 0, 0};
+    auto write = [&](const std::filesystem::path& path)
+    {
+        std::ofstream out(path, std::ios::binary);
+        out.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+        REQUIRE(out.good());
+    };
+    write(first.path);
+    bytes[12] = 0;
+    write(second.path);
+    vk::VulkanContext context; // CPU texture path only; no Vulkan device needed.
+    TextBankVK bank(context);
+    const auto a = bank.Load(first.path.string().c_str());
+    REQUIRE(static_cast<TextureVK*>(a.GetRef())->Pixels().rgba[0] == 11);
+    const auto result = bank.LoadInterpolated(first.path.string().c_str(), second.path.string().c_str(), 0.5f);
+    REQUIRE(static_cast<TextureVK*>(result.GetRef())->Pixels().rgba[0] == 8);
+    // CPU sky/fog lookup and ordinary sampling must retain their original colors.
+    REQUIRE(result->GetPixel(0, 0, 0).R() == Catch::Approx(5.5f / 255));
+    REQUIRE(static_cast<TextureVK*>(a.GetRef())->Pixels().rgba[0] == 11);
+    REQUIRE(bank.LoadInterpolated(first.path.string().c_str(), second.path.string().c_str(), 0.5f) == result);
+}
+
 TEST_CASE("Vulkan CPU pixel lookup clamps like PacLevelMem including the fog horizon sample", "[Graphics][PAADecoder]")
 {
     const uint8_t rgba[] = {255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 128, 64, 32, 255};

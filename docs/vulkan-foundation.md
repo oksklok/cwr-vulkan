@@ -1475,3 +1475,25 @@ sky interpolation. Foliage residency/coverage and atmospheric compositing are
 still partial, not solved milestones. Highest-value next visual-parity work:
 match GL33's framebuffer-level gamma/composition ordering for translucent
 clouds/effects, with matched non-unit-gamma captures before extending scope.
+
+### DXT1 interpolation rounding follow-up
+
+A synthetic DXT1 case exposed a small remaining mismatch in `8f60a83`:
+endpoints `0x1000/0x0000`, selector 2, blended halfway toward black produced
+red 0 instead of GL33's 8 (the older floating-point result was 6). DXT1-to-RGBA8
+decoding followed by five-bit truncation cannot reproduce the legacy decoder's
+rounding before interpolation. The existing packed-color test missed that step.
+
+Only DXT1 sources used in packed interpolation now lazily decode their top level
+with `PacLevelMem::DecompressDXT1`, the same routine GL33 uses. The result is
+cached separately; ordinary pixels, stored mips, alpha classification and CPU
+sky/fog lookup retain their existing decode. Other formats and mixed-format
+floating-point interpolation are unchanged. No shaders or GPU ownership changed.
+
+The actual TextBankVK regression failed with 0 before the fix and passes with 8
+afterward; ordinary red stays 11 and the CPU halfway lookup stays 5.5/255.
+Additional checks cover all DXT1 selectors, transparent/equal-endpoint blocks,
+partial blocks and truncated payloads. Both builds pass; focused checks pass
+826 assertions ON / 814 OFF, stock mip checks 265 / 173. No new gameplay visual
+improvement or performance result is claimed; the previous live validation
+results were not rerun for this narrowly scoped CPU conversion fix.

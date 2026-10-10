@@ -258,14 +258,23 @@ static void writeDXTBlock(uint8_t* rgba, int imgW, int imgH, int bx, int by, con
             std::memcpy(&rgba[((by * 4 + py) * imgW + bx * 4 + px) * 4], pixels[py][px], 4);
 }
 
-static void decompressDXT1(uint8_t* rgba, const uint8_t* data, int w, int h)
+static void decompressDXT1(uint8_t* rgba, const uint8_t* data, int w, int h, bool legacyRGB555 = false)
 {
     int bw = (w + 3) / 4, bh = (h + 3) / 4;
     for (int by = 0; by < bh; by++)
         for (int bx = 0; bx < bw; bx++)
         {
             uint8_t pixels[4][4][4];
-            decodeDXT1Block(data, pixels, true);
+            if (legacyRGB555)
+            {
+                // Decode one complete block at a time: the legacy routine writes
+                // whole 4x4 blocks, while writeDXTBlock safely clips small mips.
+                uint16_t packed[16];
+                PacLevelMem::DecompressDXT1(packed, data, 4, 4);
+                argb1555ToRGBA(packed, &pixels[0][0][0], 4, 4, 8);
+            }
+            else
+                decodeDXT1Block(data, pixels, true);
             data += 8;
             writeDXTBlock(rgba, w, h, bx, by, pixels);
         }
@@ -414,7 +423,8 @@ bool ReadPAAInfo(const std::string& path, PAAInfo& info)
 
 namespace
 {
-DecodedImage DecodeStoredMip(QIStream& in, PacLevelMem& mip, const PacPalette& pal, PacFormat format, bool isPaa)
+DecodedImage DecodeStoredMip(QIStream& in, PacLevelMem& mip, const PacPalette& pal, PacFormat format, bool isPaa,
+                             bool legacyDXT1)
 {
     DecodedImage img;
     img.width = mip._w;
@@ -488,7 +498,7 @@ DecodedImage DecodeStoredMip(QIStream& in, PacLevelMem& mip, const PacPalette& p
         switch (format)
         {
             case PacDXT1:
-                decompressDXT1(img.rgba.data(), dxtData.data(), img.width, img.height);
+                decompressDXT1(img.rgba.data(), dxtData.data(), img.width, img.height, legacyDXT1);
                 break;
             case PacDXT2:
             case PacDXT3:
@@ -539,7 +549,8 @@ DecodedImage DecodeStoredMip(QIStream& in, PacLevelMem& mip, const PacPalette& p
     return img;
 }
 
-std::vector<DecodedImage> DecodeStoredLevels(const void* data, size_t size, bool isPaa, bool allLevels)
+std::vector<DecodedImage> DecodeStoredLevels(const void* data, size_t size, bool isPaa, bool allLevels,
+                                           bool legacyDXT1 = false)
 {
     std::vector<DecodedImage> levels;
     if (!data || size < 2 || size > INT_MAX)
@@ -599,7 +610,7 @@ std::vector<DecodedImage> DecodeStoredLevels(const void* data, size_t size, bool
         if (result < 0 || in.fail())
             return {};
         const int next = in.tellg();
-        auto image = DecodeStoredMip(in, mip, pal, format, isPaa);
+        auto image = DecodeStoredMip(in, mip, pal, format, isPaa, legacyDXT1);
         if (!image.valid())
             return {};
         if (!levels.empty() && (image.width != std::max(1, levels.back().width / 2) ||
@@ -623,6 +634,12 @@ DecodedImage DecodePAABuffer(const void* data, size_t size, bool isPaa)
 std::vector<DecodedImage> DecodePAAMipChainBuffer(const void* data, size_t size, bool isPaa)
 {
     return DecodeStoredLevels(data, size, isPaa, true);
+}
+
+DecodedImage DecodePAAInterpolationBuffer(const void* data, size_t size, bool isPaa)
+{
+    auto levels = DecodeStoredLevels(data, size, isPaa, false, true);
+    return levels.empty() ? DecodedImage{} : std::move(levels.front());
 }
 
 DecodedImage DecodePAAFile(const std::string& path)
