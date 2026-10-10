@@ -275,7 +275,7 @@ class VulkanContext
     void DrawGammaPass();
     void DestroyGammaResources() noexcept;
     bool _ssaoEnabled = false;
-    std::array<float, 4> _ssaoSettings{0.7f, 1.2f, 0.03f, 80.f}; // strength, radius/bias metres, fade metres
+    std::array<float, 4> _ssaoSettings{1.2f, 1.5f, 0.03f, 80.f}; // strength, radius/bias metres, fade metres
     VkRenderPass _ssaoPass = VK_NULL_HANDLE;
     VkPipelineLayout _ssaoLayout = VK_NULL_HANDLE;
     VkPipeline _ssaoPipeline = VK_NULL_HANDLE;

@@ -2069,7 +2069,7 @@ under `build/shadow-live/ssao-depth*`.
 ### Basic SSAO pass
 
 SSAO is opt-in with `CWR_VK_SSAO=1` before launch. The existing developer
-console/harness can toggle/tune it with `triSSAO [1,0.7,1.2,0.03,80]`
+console/harness can toggle/tune it with `triSSAO [1,1.2,1.5,0.03,80]`
 (enabled, strength, radius metres, bias metres, fade distance metres); use
 zero for enabled to disable. Invalid/nonfinite parameters are rejected without
 changing state. GL33 returns false and its rendering code is unchanged.
@@ -2089,3 +2089,33 @@ zero core/synchronization validation errors/warnings through shutdown. Both
 builds pass; stock-backed focused tests pass 1,693 Vulkan / 1,498 GL33 assertions;
 driver-free policy tests pass 295 checks, including AO toggle/parameter guards.
 Broader visual tuning and performance qualification follow separately.
+
+### Stock-scene tuning and gameplay checks
+
+The opt-in defaults are strength **1.2**, radius **1.5 m**, bias **0.03 m**,
+with fading from **48 to 80 m** and a 35% modulation ceiling. Paired 1920x1080
+captures showed modest vehicle/ground, wall/fence and foliage contact shading,
+without broad black outlines or replacing the original projected shadows.
+The fixed sea-view off/on captures were identical. GL33 airfield, tank exterior
+and nighttime references were also checked (qualitative, not pixel parity).
+
+`ssao-quality2-vk` exercised normal single-mission menus/briefings and transitions
+between these stock scenarios in one validation-enabled process:
+
+- **Infantry / Ambush:** village/fence movement, aiming, firing/reload, pause,
+  normal Save/Load restoring position and resumed movement.
+- **HMMWV:** village/wooded terrain driving, interior glass and exterior cameras.
+- **Heavy Metal:** M1 driver movement, gunner optics and cannon fire (24 -> 23).
+- **Ground Attack:** airfield, Cobra cockpit/exterior, rotor, takeoff to ~20 m,
+  cannon/missile fire (500 -> 499 / 8 -> 7), normal airborne Save/Load.
+- **Shadow Killer:** loaded later combat, movement/fire/reload, NVG on/off,
+  map, resize to 1280x720 and minimize/restore.
+
+Developer assistance relocated Infantry to its village, selected vehicle seats,
+protected some combat checks and restored a prior Shadow Killer combat save.
+Fixed/frozen views were used only for image comparisons, not claimed as played
+mission progression. This was not a mission-completion test. Normal shutdown
+returned 0 with 62,340 submitted / 62,338 presented and zero Khronos core/sync
+errors or warnings; the two unmatched presentations coincided with recreation.
+Local raw captures/logs/profiles are under `build/shadow-live/ssao-quality2-vk`,
+`ssao-reference-gl33` and `ssao-tank-gl33` (ignored, not stock-asset changes).
