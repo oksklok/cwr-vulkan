@@ -1284,7 +1284,7 @@ static void DrawSortObject(SortObject* oi)
     GEngine->SetPassKindHint(savedHint);
 }
 
-void Scene::DrawObjectsAndShadowsPass1()
+void Scene::PrepareObjectsForDrawing()
 {
     // select first objects - those with highest visual priority
 
@@ -1517,6 +1517,13 @@ void Scene::DrawObjectsAndShadowsPass1()
     }
 
     QSort(_drawMergers.Data(), _drawMergers.Size(), CmpShapeObj);
+}
+
+void Scene::DrawObjectsAndShadowsPass1()
+{
+    if (!_objectsPreparedEarly)
+        PrepareObjectsForDrawing();
+    _objectsPreparedEarly = false;
     // first of all draw non-alpha objects
 
 #if DRAW_OBJS
@@ -1708,7 +1715,7 @@ void Scene::DrawObjectsAndShadowsPass2()
         // Invisible on its own — the lit shaders sample it once enabled; the
         // projected accumulator still runs.  Body in SceneShadowPass.cpp (keeps
         // Scene.cpp under the file-size limit).
-        if (GEngine->ShadowMapsEnabled())
+        if (GEngine->ShadowMapsEnabled() && !GEngine->ShadowMapsBeforeWorld())
         {
             // Sun shadows fade out at dusk and vanish at night (no sun above the
             // horizon = no sun shadow), as the projected path and OFP/ArmA/FP do.

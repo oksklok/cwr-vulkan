@@ -29,6 +29,17 @@
 namespace Poseidon
 {
 static int g_lastShadowProxyVerts = 0;
+void Scene::PrepareEarlyShadowMaps()
+{
+    if (!GEngine->ShadowMapsEnabled() || !GEngine->ShadowMapsBeforeWorld())
+        return;
+    PrepareObjectsForDrawing();
+    _objectsPreparedEarly = true;
+    const float sun = floatMax(0.0f, floatMin(1.0f, 1.0f - _mainLight->NightEffect()));
+    GEngine->SetShadowMapSunFactor(sun);
+    if (sun > 0.01f)
+        RenderShadowMapDepthPass(_drawMergers.Size());
+}
 } // namespace Poseidon
 int LastShadowProxyVertCount()
 {

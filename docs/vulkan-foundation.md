@@ -1,5 +1,40 @@
 # Vulkan backend development
 
+## Optional Vulkan cascaded sunlight shadows (2026-10-11)
+
+CSM remains **off by default**. The existing `triEnableShadowMaps` and
+`triShadowSet*` developer commands now work with Vulkan; `triDisableShadowMaps`
+restores the unchanged projected accumulator. No graphics menu or asset changes.
+
+The backend consumes `Scene::RenderShadowMapDepthPass` / `ShadowCasterSet` and
+the existing `BuildShadowCascadesTiered` results. Solid casters use front-face
+culling; two-sided foliage/fences use the same 0.5 texture-alpha cutoff as GL33.
+The existing draw/shadow LOD and caster-distance rules remain authoritative.
+Each fence-retired frame owns a reusable D32 array (one to four layers), views,
+framebuffers and descriptor. Solid/alpha streams upload once per frame through
+the existing transient pages and are reused by every cascade.
+
+An opt-in backend hook prepares the existing object list and depth maps before
+landscape rendering. GL33 retains its original ordering. The depth pass suspends
+the scene and resumes with color/depth/stencil LOAD operations, invalidating
+the command cache. Native receivers use camera-relative world coordinates;
+software-transformed receivers reconstruct them from clip W, projection and
+camera rotation, including terrain. Sampling follows GL33's omni/frustum tier
+selection, coverage fallthrough, quadratic cascade bias, 3x3 PCF, 15% transition
+bands, distance/fog fade and sunlight strength. World-effect boundaries and
+material flags exclude UI, sky and cockpit/weapon overlays. Maps reset each frame
+and become inactive at night. Opt-in profiling reports cascade depth GPU time.
+
+Initial verification: Vulkan and GL33-only builds, 56 focused cases / 738
+assertions, and driver-free Vulkan policy/command-cache checks pass. Stock
+Infantry at 1920x1080 shows soldier, building and cutout foliage shadows; on/off
+screenshots and a GL33 reference are under ignored `build/shadow-live/csm-*`.
+Infantry movement, camera changes, firing, grenades (stock count 6 to 4), map,
+pause, CSM+SSAO, resize/minimize/restore and normal exit ran with zero Khronos
+core/synchronization warnings/errors (10,693 submitted frames). A separate first
+run also closed cleanly after 7,131 frames. Broader qualification follows below;
+these runs alone are not a completed gameplay/performance acceptance claim.
+
 Current status: Vulkan remains opt-in. Sustained mission-flow testing now covers
 infantry, campaign transitions, tank driving/gunnery, helicopter flight/landing,
 night combat and save/load. It exposed and fixed a combat crash from tracers

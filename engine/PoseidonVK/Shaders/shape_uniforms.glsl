@@ -12,4 +12,10 @@ layout(set = 2, binding = 0, std140) uniform ShapeLighting {
     vec4 eyeCoef;
     vec4 localCount;
     ShapeLocalLight localLights[8];
+    vec4 shadowReceiver;
+    mat4 cascadeVP[4];
+    vec4 cascadeSplits;
+    vec4 cascadeControl;
+    vec4 shadowForward;
+    vec4 shadowStrength;
 } lighting;

@@ -1,6 +1,9 @@
 #include <PoseidonVK/EngineVK.hpp>
 #include <PoseidonVK/ShapeGeometryVK.hpp>
 #include <Poseidon/Graphics/Core/TLVertex.hpp>
+#include <PoseidonVK/ShapeLightingVK.hpp>
+#include <Poseidon/World/Scene/Scene.hpp>
+#include <Poseidon/World/Scene/Camera/Camera.hpp>
 
 namespace Poseidon
 {
@@ -101,10 +104,24 @@ void EngineVK::SubmitSoftware(const std::vector<uint32_t>& indices)
                               : state.blend;
     const float cutoff = shadow ? std::max(1, (GetShadowFactor() * 7) >> 4) / 255.f :
                                  state.cutoff;
+    vk::ShapeLighting receiver;
+    receiver.fogColor = {_fogColor.R(), _fogColor.G(), _fogColor.B(), 1};
+    receiver.eyeCoef = _vk.EyeCoef();
+    if (_shadowWorld && _shadowTuning.enabled &&
+        !(_softwareFlags & (DisableSun | NoZBuf | NoDropdown | IsLight | IsShadow | IsAlphaFog)) &&
+        GScene && GScene->GetCamera())
+    {
+        const auto* camera = GScene->GetCamera();
+        Matrix4 rotation = camera->Transform();
+        rotation.SetPosition(VZero);
+        vk::ShapeWorld(receiver, rotation);
+        const auto& projection = camera->ProjectionNormal();
+        receiver.shadowReceiver = {1, projection(0, 0), projection(1, 1), 0};
+    }
     _vk.DrawMesh(mesh.buffers, 0, indices.size(), false, {}, {1, 1, 1, 1}, image,
                  vk::ShapeSampler(render::SplitLegacy(_softwareFlags)), cutoff, blend, true,
                  (_softwareFlags & NoZBuf) == 0, nullptr, {}, 1, {0, -1, 0}, mesh.vertexOffset, mesh.indexOffset,
-                 (_softwareFlags & NoZWrite) == 0, nullptr, shadow, !shadow && (_softwareFlags & IsLight) != 0);
+                 (_softwareFlags & NoZWrite) == 0, &receiver, shadow, !shadow && (_softwareFlags & IsLight) != 0);
 }
 void EngineVK::EndMesh(TLVertexTable& mesh)
 {

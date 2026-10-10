@@ -89,6 +89,11 @@ struct MeshSlice
     VkDeviceSize vertexOffset = 0, indexOffset = 0;
 };
 // Backend-private Vulkan ownership. SDL owns the window; this owns its surface.
+struct ShadowAlphaBatch
+{
+    std::shared_ptr<TextureImage> texture;
+    uint32_t first = 0, count = 0;
+};
 // No engine drawing, asset or GL types are involved in device/swapchain lifetime.
 class VulkanContext
 {
@@ -112,6 +117,11 @@ class VulkanContext
     void ClearDepth();
     void BeginShadowPass();
     void EndShadowPass();
+    void RenderShadowDepth(const float* matrices, int count, int resolution,
+                           std::span<const float> solid, std::span<const float> alpha,
+                           std::span<const ShadowAlphaBatch> batches);
+    void SetShadowState(const ShadowLighting& state) { _csmState = state; }
+    void ResetShadowState() { _csmActive = false; }
     void DrawDiagnosticTriangle(); // Explicit DrawTestPattern seam, never an automatic gameplay draw.
     std::shared_ptr<MeshBuffers> UploadMesh(const void* vertices, size_t vertexBytes, const void* indices,
                                             size_t indexBytes);
@@ -158,6 +168,7 @@ class VulkanContext
         VkPipeline pipeline = VK_NULL_HANDLE;
         std::array<VkDescriptorSet, 2> textures{};
         VkDescriptorSet lighting = VK_NULL_HANDLE;
+        VkDescriptorSet cascades = VK_NULL_HANDLE;
         uint32_t lightingOffset = 0;
         VkBuffer vertex = VK_NULL_HANDLE, index = VK_NULL_HANDLE;
         VkDeviceSize vertexOffset = 0, indexOffset = 0;
@@ -179,6 +190,8 @@ class VulkanContext
         double commandStart = 0, commandMs = 0, submitMs = 0, retentionMs = 0, bindingMs = 0;
         double ssaoMs = 0, ssaoGpuMs = 0;
         uint64_t ssaoPasses = 0, ssaoGpuSamples = 0;
+        double csmGpuMs = 0;
+        uint64_t csmPasses = 0, csmGpuSamples = 0, csmVertices = 0;
         // Pipeline, textures, lighting, vertex, index, viewport, scissor, push constants.
         std::array<uint64_t, 8> stateCommands{};
         uint64_t transient = 0, allocations = 0, textureUploads = 0, litDraws = 0, localLights = 0;
@@ -194,6 +207,17 @@ class VulkanContext
     void ReportProfile();
     struct Frame
     {
+        struct ShadowTarget
+        {
+            VkImage image = VK_NULL_HANDLE;
+            VkDeviceMemory memory = VK_NULL_HANDLE;
+            VkImageView view = VK_NULL_HANDLE;
+            std::array<VkImageView, 4> layers{};
+            std::array<VkFramebuffer, 4> framebuffers{};
+            VkDescriptorPool pool = VK_NULL_HANDLE;
+            VkDescriptorSet set = VK_NULL_HANDLE;
+            int resolution = 0, count = 0;
+        } shadow;
         struct TransientPage
         {
             std::shared_ptr<MeshBuffers> buffers;
@@ -204,6 +228,8 @@ class VulkanContext
         VkFence submitted = VK_NULL_HANDLE;
         VkQueryPool ssaoQueries = VK_NULL_HANDLE;
         bool ssaoTimestamped = false;
+        VkQueryPool csmQueries = VK_NULL_HANDLE;
+        bool csmTimestamped = false;
         std::vector<std::shared_ptr<MeshBuffers>> meshes;
         std::vector<std::shared_ptr<TextureImage>> textures;
         std::vector<TransientPage> transientPages;
@@ -241,6 +267,20 @@ class VulkanContext
     std::shared_ptr<TextureImage> _whiteTexture;
     VkDescriptorSetLayout _textureLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout _lightingLayout = VK_NULL_HANDLE;
+    VkRenderPass _csmPass = VK_NULL_HANDLE;
+    VkPipelineLayout _csmLayout = VK_NULL_HANDLE;
+    std::array<VkPipeline, 2> _csmPipelines{};
+    VkSampler _csmSampler = VK_NULL_HANDLE;
+    VkImageView _csmFallbackView = VK_NULL_HANDLE;
+    VkDescriptorPool _csmFallbackPool = VK_NULL_HANDLE;
+    VkDescriptorSet _csmFallbackSet = VK_NULL_HANDLE;
+    ShadowLighting _csmState{};
+    bool _csmActive = false;
+    void CreateShadowResources();
+    void CreateShadowTarget(Frame::ShadowTarget& target, int resolution, int count);
+    void DestroyShadowTarget(Frame::ShadowTarget& target) noexcept;
+    void DestroyShadowResources() noexcept;
+    void CreateShadowFallback();
     uint32_t _uniformAlignment = 16;
     void BindLighting(const ShapeLighting& lighting, bool screen);
     std::array<float, 4> _fogColor{};

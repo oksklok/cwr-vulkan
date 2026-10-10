@@ -192,7 +192,36 @@ TEST_CASE("Vulkan native normals use inverse transpose and materials use the eng
     vk::ShapeMaterial(lighting, material, sun, false);
     REQUIRE(lighting.ambient[3] == 0);
     REQUIRE(lighting.emissive[0] == Catch::Approx(0.1f));
-    REQUIRE(sizeof(vk::ShapeLighting) == 768);
+    REQUIRE(offsetof(vk::ShapeLighting, shadowReceiver) == 768);
+    REQUIRE(offsetof(vk::ShapeLighting, shadow) == 784);
+    REQUIRE(sizeof(vk::ShapeLighting) == 1104);
+}
+
+TEST_CASE("Vulkan software shadow receivers reconstruct the native camera-relative coordinates", "[Graphics][vulkan-shape]")
+{
+    // Exercise nontrivial camera rotation and two FOVs. The software stream
+    // preserves clip W; depth bias must not move its reconstructed receiver.
+    Matrix4 camera(MIdentity);
+    camera.SetOrientation(Matrix3(MRotationY, 0.73f) * Matrix3(MRotationX, -0.25f));
+    Matrix4 view = camera.InverseScaled();
+    for (float focal : {0.8f, 2.1f})
+    {
+        Matrix4 projection(MZero);
+        projection.SetScale(focal, focal * 1.777f, 1.001f);
+        projection.SetPosition(Vector3(0, 0, -0.1001f));
+        const auto mvp = vk::ShapeMVP(view, projection);
+        for (Vector3 point : {Vector3(4, 2, 20), Vector3(-7, -3, 80)})
+        {
+            float clip[4]{};
+            for (int row = 0; row < 4; ++row)
+                clip[row] = mvp[row] * point.X() + mvp[4 + row] * point.Y() + mvp[8 + row] * point.Z() + mvp[12 + row];
+            const Vector3 eye(clip[0] / focal, -clip[1] / (focal * 1.777f), clip[3]);
+            const auto reconstructed = camera.Rotate(eye);
+            REQUIRE(reconstructed.X() == Catch::Approx(point.X()).margin(0.0001));
+            REQUIRE(reconstructed.Y() == Catch::Approx(point.Y()).margin(0.0001));
+            REQUIRE(reconstructed.Z() == Catch::Approx(point.Z()).margin(0.0001));
+        }
+    }
 }
 
 TEST_CASE("Vulkan specular constants preserve material power sun color and disable conditions", "[Graphics][vulkan-shape]")

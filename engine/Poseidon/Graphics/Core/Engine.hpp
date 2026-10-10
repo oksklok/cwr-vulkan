@@ -794,6 +794,8 @@ class Engine : public IGraphicsEngine
     /// scene render a depth pass from the sun and the lit shaders sample it.
     virtual void SetShadowMapsEnabled(bool /*enabled*/) {}
     virtual bool ShadowMapsEnabled() const { return false; }
+    // Explicit backends need this frame's maps before submitting world receivers.
+    virtual bool ShadowMapsBeforeWorld() const { return false; }
 
     /// Read / replace the full shadow-map tuning set (see ShadowMapTuning).
     /// Default base returns an all-default set; only the GL33 backend stores it.

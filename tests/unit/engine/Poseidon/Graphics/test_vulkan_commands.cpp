@@ -8,6 +8,7 @@ namespace
 {
 std::array<unsigned, 8> calls{};
 unsigned draws = 0;
+unsigned cascadeBindings = 0;
 unsigned finalDraws = 0, passBegins = 0, passEnds = 0;
 bool finalTriangleValid = true;
 float inverseGamma = 0;
@@ -22,7 +23,11 @@ template<class T> T Handle(uintptr_t value)
 }
 VKAPI_ATTR void VKAPI_CALL vkCmdBindPipeline(VkCommandBuffer, VkPipelineBindPoint, VkPipeline) { ++calls[0]; }
 VKAPI_ATTR void VKAPI_CALL vkCmdBindDescriptorSets(VkCommandBuffer, VkPipelineBindPoint, VkPipelineLayout,
-    uint32_t first, uint32_t, const VkDescriptorSet*, uint32_t, const uint32_t*) { ++calls[first == 2 ? 2 : 1]; }
+    uint32_t first, uint32_t, const VkDescriptorSet*, uint32_t, const uint32_t*)
+{
+    if (first == 3) ++cascadeBindings;
+    else ++calls[first == 2 ? 2 : 1];
+}
 VKAPI_ATTR void VKAPI_CALL vkCmdBindVertexBuffers(VkCommandBuffer, uint32_t, uint32_t, const VkBuffer*, const VkDeviceSize*) { ++calls[3]; }
 VKAPI_ATTR void VKAPI_CALL vkCmdBindIndexBuffer(VkCommandBuffer, VkBuffer, VkDeviceSize, VkIndexType) { ++calls[4]; }
 VKAPI_ATTR void VKAPI_CALL vkCmdSetViewport(VkCommandBuffer, uint32_t, uint32_t, const VkViewport* value) { ++calls[5]; finalViewport = *value; }
@@ -59,6 +64,7 @@ struct VulkanCommandStateTest
         context._loggedShape = true;
         context._extent = {800, 600};
         context._whiteTexture = texture;
+        context._csmFallbackSet = Handle<VkDescriptorSet>(60);
         context._shapeLayout = Handle<VkPipelineLayout>(2);
         context._shapePipelines.fill(Handle<VkPipeline>(3));
         context._screenPipelines.fill(Handle<VkPipeline>(4));
@@ -92,6 +98,7 @@ struct VulkanCommandStateTest
         draws = 0;
         draw(); expect({1,1,1,1,1,1,1,1}, "first draw must bind every state, including all-zero matrix");
         draw(); expect({}, "identical draw must not repeat state commands");
+        if (cascadeBindings != 1) throw std::runtime_error("CSM fallback must bind once across identical draws");
         vertexOffset = 44; draw(); expect({0,0,0,1,0,0,0,0}, "vertex offset is binding state");
         indexOffset = 12; draw(); expect({0,0,0,0,1,0,0,0}, "index offset is binding state");
         index16 = false; draw(); expect({0,0,0,0,1,0,0,0}, "index type is binding state");

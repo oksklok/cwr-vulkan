@@ -8,12 +8,14 @@ layout(location = 0) out vec2 texCoord;
 layout(location = 1) out vec4 vertexColor;
 layout(location = 2) out float fogVisibility;
 layout(location = 3) out vec3 specularColor;
+layout(location = 4) out vec3 shadowWorld;
 layout(push_constant) uniform ShapeDraw { mat4 mvp; vec4 color; float alphaCutoff; float reserved; float detailEnabled; float shadow; } draw;
 void main() {
     gl_Position = draw.mvp * vec4(position, 1.0);
     texCoord = uv;
     specularColor = vec3(0.0);
     vec3 relativeWorld = (lighting.world * vec4(position, 1.0)).xyz;
+    shadowWorld = relativeWorld;
     float distance = length(relativeWorld);
     fogVisibility = lighting.fogParams.z > 0.5 ?
         clamp(1.0 - (distance - lighting.fogParams.x) * lighting.fogParams.y, 0.0, 1.0) : 1.0;

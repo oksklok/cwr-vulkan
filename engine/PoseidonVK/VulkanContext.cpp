@@ -339,6 +339,7 @@ void VulkanContext::CreateFrameResources()
             queries.queryType = VK_QUERY_TYPE_TIMESTAMP;
             queries.queryCount = 2;
             Check(vkCreateQueryPool(_device, &queries, nullptr, &frame.ssaoQueries), "create AO timestamps");
+            Check(vkCreateQueryPool(_device, &queries, nullptr, &frame.csmQueries), "create CSM timestamps");
         }
         const auto prefix = "PoseidonVK frame " + std::to_string(i);
         Name(VK_OBJECT_TYPE_COMMAND_BUFFER, ObjectHandle(frame.command), (prefix + " commands").c_str());
@@ -636,6 +637,18 @@ bool VulkanContext::BeginFrame(uint32_t width, uint32_t height)
         frame.ssaoTimestamped = false;
     }
     frame.meshes.clear();
+    if (frame.csmTimestamped)
+    {
+        uint64_t stamps[2]{};
+        if (vkGetQueryPoolResults(_device, frame.csmQueries, 0, 2, sizeof(stamps), stamps,
+                                 sizeof(uint64_t), VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
+        {
+            const uint64_t mask = _timestampBits == 64 ? UINT64_MAX : (uint64_t(1) << _timestampBits) - 1;
+            _profile.csmGpuMs += double((stamps[1] - stamps[0]) & mask) * _timestampPeriod / 1e6;
+            ++_profile.csmGpuSamples;
+        }
+        frame.csmTimestamped = false;
+    }
     frame.textures.clear();
     // Only this frame's completed fence permits overwriting its mapped pages.
     frame.transientPage = 0;
@@ -839,6 +852,10 @@ void VulkanContext::ReportProfile()
         _profile.stateCommands[4] / frames, _profile.stateCommands[5] / frames,
         _profile.stateCommands[6] / frames, _profile.stateCommands[7] / frames);
     const double last = _profile.lastEnd;
+    std::fprintf(stderr, "Vulkan CSM: passes/frame=%.2f vertices/frame=%.0f depth_gpu_ms/pass=%.4f gpu_samples=%llu\n",
+        _profile.csmPasses / frames, _profile.csmVertices / frames,
+        _profile.csmGpuSamples ? _profile.csmGpuMs / _profile.csmGpuSamples : -1.0,
+        static_cast<unsigned long long>(_profile.csmGpuSamples));
     std::fprintf(stderr, "Vulkan SSAO: enabled=%d passes/frame=%.2f record_ms/frame=%.4f gpu_ms/pass=%.4f gpu_samples=%llu radius=%.2f strength=%.2f bias=%.3f fade=%.1f\n",
                  int(_ssaoEnabled), _profile.ssaoPasses / frames, _profile.ssaoMs / frames,
                  _profile.ssaoGpuSamples ? _profile.ssaoGpuMs / _profile.ssaoGpuSamples : -1.0,
@@ -864,6 +881,7 @@ unsigned VulkanContext::Shutdown() noexcept
     {
         // Also safe after partial initialization or device loss; shutdown must not throw.
         vkDeviceWaitIdle(_device);
+        DestroyShadowResources();
         for (auto& entry : _meshes)
             if (auto mesh = entry.lock())
                 mesh->Destroy();
@@ -909,6 +927,8 @@ unsigned VulkanContext::Shutdown() noexcept
                 vkDestroyFence(_device, frame.submitted, nullptr);
             if (frame.ssaoQueries)
                 vkDestroyQueryPool(_device, frame.ssaoQueries, nullptr);
+            if (frame.csmQueries)
+                vkDestroyQueryPool(_device, frame.csmQueries, nullptr);
             frame = {};
         }
         if (_pool)

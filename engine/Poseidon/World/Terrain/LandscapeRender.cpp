@@ -1829,6 +1829,7 @@ void Landscape::DrawClouds(Scene& scene)
 
 void Landscape::Draw(Scene& scene)
 {
+    scene.PrepareEarlyShadowMaps();
     {
         Camera& camera = *scene.GetCamera();
 

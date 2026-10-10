@@ -1,11 +1,13 @@
 #version 450
 #extension GL_GOOGLE_include_directive : require
 #include "shape_uniforms.glsl"
+#include "shadow_sample.glsl"
 layout(location = 0) out vec4 outColor;
 layout(location = 0) in vec2 texCoord;
 layout(location = 1) in vec4 vertexColor;
 layout(location = 2) in float fogVisibility;
 layout(location = 3) in vec3 specularColor;
+layout(location = 4) in vec3 shadowWorld;
 layout(set = 0, binding = 0) uniform sampler2D diffuseTexture;
 layout(set = 1, binding = 0) uniform sampler2D detailTexture;
 layout(push_constant) uniform ShapeDraw { mat4 mvp; vec4 color; float alphaCutoff; float reserved; float detailEnabled; vec4 lightDirection; } draw;
@@ -20,6 +22,7 @@ void main() {
     // PSNormal/PSDetail add specular after diffuse/detail, before night-eye and fog.
     if (draw.detailEnabled < 1.5) outColor.rgb += specularColor;
     if (outColor.a < draw.alphaCutoff) discard;
+    outColor.rgb *= sunlightVisibility(shadowWorld, fogVisibility);
     float luminance = clamp(dot(outColor.rgb, lighting.eyeCoef.rgb), 0.0, 1.0);
     float nightBlend = clamp(luminance + lighting.eyeCoef.a, 0.0, 1.0);
     outColor.rgb = mix(vec3(luminance), outColor.rgb, nightBlend);

@@ -479,6 +479,12 @@ GameValue TriEnableShadowMaps(const GameState* /*state*/)
     return GameValue("OK");
 }
 
+GameValue TriDisableShadowMaps(const GameState* /*state*/)
+{
+    if (GEngine) GEngine->SetShadowMapsEnabled(false);
+    return GameValue("OK");
+}
+
 /// triShadowSceneDump "path" — write the current frame's shadow depth map (the
 /// live scene rendered from the sun) to a PNG for eyeballing. "OK:path"/"FAIL:..".
 GameValue TriShadowSceneDump(const GameState* /*state*/, GameValuePar arg)

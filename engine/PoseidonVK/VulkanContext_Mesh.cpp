@@ -157,8 +157,8 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         uniforms.bindingCount = 1;
         uniforms.pBindings = &binding;
         Require(vkCreateDescriptorSetLayout(_device, &uniforms, nullptr, &_lightingLayout), "create lighting layout");
-        const VkDescriptorSetLayout sets[] = {_textureLayout, _textureLayout, _lightingLayout};
-        layout.setLayoutCount = 3;
+        const VkDescriptorSetLayout sets[] = {_textureLayout, _textureLayout, _lightingLayout, _textureLayout};
+        layout.setLayoutCount = 4;
         layout.pSetLayouts = sets;
         layout.pushConstantRangeCount = 1;
         layout.pPushConstantRanges = &push;
@@ -318,9 +318,19 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     if (!pipeline)
         CreateShapePipeline(blend, screen, depthTest, depthWrite, shadow, additive);
     const double lightingStart = _profile.enabled ? ProfileClock() : 0;
+    CreateShadowFallback();
+    const auto shadowSet = _csmActive ? _frames[_frame].shadow.set : _csmFallbackSet;
+    if (_commands.cascades != shadowSet)
+    {
+        vkCmdBindDescriptorSets(_frames[_frame].command, VK_PIPELINE_BIND_POINT_GRAPHICS, _shapeLayout, 3, 1,
+                                &shadowSet, 0, nullptr);
+        _commands.cascades = shadowSet;
+    }
     if (lighting)
     {
-        BindLighting(*lighting, false);
+        auto receiver = *lighting;
+        receiver.shadow = _csmActive ? _csmState : ShadowLighting{};
+        BindLighting(receiver, screen);
         if (_profile.enabled && !shadow)
         {
             ++_profile.litDraws;

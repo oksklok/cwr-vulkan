@@ -15,11 +15,6 @@ void EngineVK::EmitDraw(const render::frame::Draw&)
 {
     Unsupported("indexed draw emission");
 }
-void EngineVK::SetShadowMapsEnabled(bool enabled)
-{
-    if (enabled)
-        Unsupported("shadow maps");
-}
 AbstractTextBank* EngineVK::TextBank()
 {
     return &_textures;

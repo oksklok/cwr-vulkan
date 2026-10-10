@@ -100,6 +100,9 @@ void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& s
     _sectionAlphaCutoff = state.cutoff;
     _sectionDepthTest = state.depthTest;
     _sectionDepthWrite = state.depthWrite;
+    _lighting.shadowReceiver[0] = _shadowWorld && _shadowTuning.enabled && _sunEnabled &&
+        _lighting.ambient[3] > 0 && !(_shapeFlags & (NoZBuf | IsShadow | DisableSun | NoDropdown)) &&
+        !(render::MergeLegacy(spec) & (NoZBuf | IsShadow | DisableSun | NoDropdown)) ? 1.f : 0.f;
     if (_sectionShadow)
     {
         _lighting.fogParams[3] = GScene->GetShadowFogMaxRange();

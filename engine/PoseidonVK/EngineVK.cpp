@@ -145,6 +145,8 @@ void EngineVK::InitDraw(bool clear, PackedColor color)
         }
         Engine::InitDraw(clear, color);
         _worldEffectsPending = false;
+        _shadowWorld = false;
+        _vk.ResetShadowState();
         if (clear)
             Clear(false, true, color);
     }
@@ -169,6 +171,7 @@ void EngineVK::Clear(bool clearZ, bool clear, PackedColor color)
 
 void EngineVK::BeginWorldEffects(bool enabled)
 {
+    _shadowWorld = enabled && _vk.FrameOpen();
     _worldEffectsPending = enabled && _vk.FrameOpen();
     if (_worldEffectsPending && GScene && GScene->GetCamera())
     {
@@ -181,6 +184,7 @@ void EngineVK::BeginWorldEffects(bool enabled)
 
 void EngineVK::FinishWorldEffects()
 {
+    _shadowWorld = false;
     if (!_worldEffectsPending)
         return;
     _worldEffectsPending = false;

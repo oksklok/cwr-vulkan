@@ -103,6 +103,13 @@ class EngineVK final : public Engine
     void EndShadowPass() override;
     bool SupportsProjectedShadows() const override { return true; }
     void SetShadowMapsEnabled(bool enabled) override;
+    bool ShadowMapsEnabled() const override { return _shadowTuning.enabled; }
+    bool ShadowMapsBeforeWorld() const override { return true; }
+    ShadowMapTuning GetShadowMapTuning() const override { return _shadowTuning; }
+    void SetShadowMapTuning(const ShadowMapTuning& tuning) override;
+    void SetShadowMapSunFactor(float factor) override;
+    void RenderShadowDepthScene(const float* matrices, const float* splits, const float* forward,
+                                int count, int omniCount, int resolution, const ShadowCasterSet& casters) override;
     AbstractTextBank* TextBank() override;
     void TextureDestroyed(Texture*) override;
     void SetGamma(float gamma) override;
@@ -133,6 +140,9 @@ class EngineVK final : public Engine
     bool _paused = false;
     bool _failed = false;
     bool _worldEffectsPending = false;
+    ShadowMapTuning _shadowTuning;
+    float _shadowSunFactor = 0;
+    bool _shadowWorld = false;
     std::array<float, 4> _worldProjection{};
     bool _meshPrepared = false;
     int _bias = 0;

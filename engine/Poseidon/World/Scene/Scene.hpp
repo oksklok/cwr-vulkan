@@ -339,6 +339,9 @@ class Scene
     void EndObjects(); // sort all objects
     void DrawReflections(const WaterLevel& water);
     void DrawObjectsAndShadowsPass1();
+    void PrepareObjectsForDrawing();
+    void PrepareEarlyShadowMaps();
+    bool _objectsPreparedEarly = false;
     void DrawObjectsAndShadowsPass2();
     // Shadow-map depth pass (off by default): collect the visible casters and render
     // the cascade depth maps from the sun.  Lives in SceneShadowPass.cpp to keep
