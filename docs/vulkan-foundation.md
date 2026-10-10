@@ -777,3 +777,13 @@ shadow mapping; no exhaustive proxy/LOD coverage. The map remains expensive
 shoreline patches were observed but not investigated in this shadow task.
 The next high-value performance step is reducing the map's repeated screen draw
 overhead, independently of projected shadows.
+
+## Ordered map batching: alpha prerequisite (2026-10-10)
+
+Software-transformed explicit IsTransparent sections now use GL33's 192/255
+cutoff even when decoded texture alpha suggests a different classification.
+IsAlpha/IsAlphaFog/additive fades retain near-zero rejection; projected shadows
+retain their existing independent alpha policy. Both build configurations and
+11 focused Shape cases (131 assertions) pass, plus 92 driver-free policy guards.
+RTX Infantry gameplay, map open/close, resize and minimize/restore were inspected
+in `build/shadow-live/map-m1-baseline`. This is still the unbatched renderer.

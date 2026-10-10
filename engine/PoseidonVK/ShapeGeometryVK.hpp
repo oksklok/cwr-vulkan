@@ -17,6 +17,16 @@ struct ShapeAlphaState
     bool depthTest;
     bool depthWrite;
 };
+inline ShapeAlphaState SoftwareAlpha(int flags, AlphaStats::Kind texture)
+{
+    const bool transparent = (flags & IsTransparent) != 0;
+    const bool blend = (flags & (IsAlpha | IsAlphaFog | IsLight)) != 0 ||
+                       (!transparent && texture == AlphaStats::Blend);
+    const float cutoff = blend ? 1.f / 255 : transparent ? 192.f / 255 :
+                         texture == AlphaStats::Cutout ? 0.5f : 0;
+    const bool depth = (flags & NoZBuf) == 0;
+    return {blend, cutoff, depth, depth && (flags & NoZWrite) == 0};
+}
 inline ShapeAlphaState ShapeAlpha(const render::LegacySpec& spec, AlphaStats::Kind texture, float opacity)
 {
     const bool blend = render::Has(spec.backend, render::Backend::IsAlpha) ||

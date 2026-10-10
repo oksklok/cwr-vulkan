@@ -95,10 +95,12 @@ void EngineVK::SubmitSoftware(const std::vector<uint32_t>& indices)
         image = texture->Image(_vk);
         alpha = texture->GetAlphaClass();
     }
-    const bool blend = alpha == AlphaStats::Blend || (_softwareFlags & (IsAlpha | IsAlphaFog | IsLight)) != 0;
     const bool shadow = (_softwareFlags & IsShadow) != 0;
+    const auto state = vk::SoftwareAlpha(_softwareFlags, alpha);
+    const bool blend = shadow ? alpha == AlphaStats::Blend || (_softwareFlags & (IsAlpha | IsAlphaFog | IsLight)) != 0
+                              : state.blend;
     const float cutoff = shadow ? std::max(1, (GetShadowFactor() * 7) >> 4) / 255.f :
-                         blend ? 1.f / 255 : alpha == AlphaStats::Cutout ? 0.5f : 0;
+                                 state.cutoff;
     _vk.DrawMesh(mesh.buffers, 0, indices.size(), false, {}, {1, 1, 1, 1}, image,
                  vk::ShapeSampler(render::SplitLegacy(_softwareFlags)), cutoff, blend, true,
                  (_softwareFlags & NoZBuf) == 0, nullptr, {}, 1, {0, -1, 0}, mesh.vertexOffset, mesh.indexOffset,

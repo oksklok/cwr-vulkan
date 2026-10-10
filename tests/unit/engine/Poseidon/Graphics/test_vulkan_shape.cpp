@@ -8,6 +8,26 @@
 
 using namespace Poseidon;
 
+TEST_CASE("Vulkan software explicit cutouts override decoded alpha but retain fades", "[Graphics][vulkan-shape]")
+{
+    for (auto texture : {AlphaStats::Opaque, AlphaStats::Cutout, AlphaStats::Blend})
+    {
+        const auto cutout = vk::SoftwareAlpha(IsTransparent, texture);
+        REQUIRE_FALSE(cutout.blend);
+        REQUIRE(cutout.cutoff == Catch::Approx(192.f / 255));
+        REQUIRE(cutout.depthWrite);
+        for (int fade : {IsAlpha, IsAlphaFog, IsLight})
+        {
+            const auto blended = vk::SoftwareAlpha(IsTransparent | fade | NoZWrite, texture);
+            REQUIRE(blended.blend);
+            REQUIRE(blended.cutoff == Catch::Approx(1.f / 255));
+            REQUIRE_FALSE(blended.depthWrite);
+        }
+    }
+    REQUIRE(vk::SoftwareAlpha(0, AlphaStats::Cutout).cutoff == 0.5f);
+    REQUIRE(vk::SoftwareAlpha(0, AlphaStats::Blend).blend);
+}
+
 TEST_CASE("Vulkan native alpha flags distinguish blending cutout and fading", "[Graphics][vulkan-shape]")
 {
     const auto opaque = vk::ShapeAlpha(render::SplitLegacy(0), AlphaStats::Opaque, 1);
