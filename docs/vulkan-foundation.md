@@ -1219,3 +1219,82 @@ mip-view bounds and full AI88 bytes. Both builds pass: 34 cases / 301 assertions
 Vulkan ON, 33 / 296 OFF; eight stock textures pass 265 assertions ON and the
 driver-free Vulkan guards pass 266 checks. Temporary texture/road traces were
 removed. No GL33 drawing code, stock assets, shaders or batching changed.
+
+### Final filtering verification and performance
+
+Matched 800x600 camera/date/weather/visibility comparisons used the copied GOG
+profile: six Infantry coast views (dawn shoreline/bay, noon bay/second coast,
+near water, fog at 300 m) and four HMMWV road/town views (noon, dusk, fog).
+`build/shadow-live/filter-{before,aniso,ai88}-water` and the corresponding road
+runs retain the before/intermediate/after captures; `filter-gl33-{water,road}`
+are the default-GL33 references. Camera geometry/settings match, not mission
+NPC/subtitle timing. Oblique water/terrain detail is substantially closer to
+GL33; AI88 road bands are gone. Buildings, shoreline transitions and distant
+water remain intact. No new white patches or obvious filtering seams were
+seen. Live movement did not reveal excessive new shimmering; this is bounded
+inspection, not a claim of pixel-identical rendering.
+
+`filter-multi-off-{vk,gl33}` additionally uses a copied profile with
+multitexturing=0. Both lose the secondary ground detail as expected while
+retaining ordinary water, confirming the engine setting reaches shader choice.
+The usual multitexturing=1 profile was not changed.
+
+RTX 4060 Ti, 800x600, existing VSync-on/FPS-cap-240 profile, CWR_VK_PROFILE:
+
+| Resident scene | Core + sync validation | 8b2d705 ms / FPS | Final ms / FPS |
+| --- | --- | --- | --- |
+| HMMWV oblique road/buildings/foliage | On | 7.952 / 125.75 | 8.010 / 124.84 |
+| HMMWV oblique road/buildings/foliage | Off | 6.316 / 158.33 | 6.323 / 158.15 |
+| Infantry noon coastal water | On | 6.315 / 158.35 | 6.312 / 158.43 |
+| Infantry noon coastal water | Off | 6.317 / 158.30 | 6.335 / 157.85 |
+
+These are means of the first three complete two-second intervals with zero
+allocations and texture uploads after the matched camera setup, not whole-run
+averages. Road geometry is matched at 615 lit draws / 1,922 shadow triangles;
+HUD/script submissions vary. Evidence: `filter-perf-road-{before,after}-{on,off}3`
+and `filter-perf-water-{before,after}-{on,off}2`. Later road intervals contain
+large stalls and changing scene workloads: final-five interval ranges across
+the four road runs were 79.90–158.02 FPS (7.938–12.515 ms validation-on,
+6.328–11.630 ms off). These are retained in the logs, not attributed to the
+filter change, and not evidence of a speedup. An earlier overlapping diagnostic
+attempt (`filter-perf-road-*-on`, no numeric suffix) is excluded.
+
+Road record_ms was 7.665 -> 7.746 on / 6.070 -> 6.078 off; geometry uploads
+0.191 -> 0.191 ms on / 0.181 -> 0.190 off. Water uploads stayed 0.007 ms.
+All reported resident intervals have zero recurring allocations or texture
+uploads. Off-mode present waits are about 4.1 ms road / 5.4 ms water: the
+normal runs are display-paced, so these results do not measure uncapped GPU
+headroom. No disproportionate cost was demonstrated that warrants reducing
+GL33-equivalent 16x anisotropy. No performance optimization was added.
+
+Fresh normal gameplay checks (`filter-game-*`, not mission completion):
+
+- Infantry: about 8 m movement, camera rotation, aim/fire (M16 30 -> 29), map
+  open/zoom/close, HUD, third-person soldier/projected shadow, coast water
+  captures ten seconds apart, pause/resume, 960x640 resize/minimize/restore.
+  Normal close: 10,967 submissions, zero validation errors/warnings.
+- Take the Car: about 5 m movement, rotation, aim/fire (30 -> 29), close foliage
+  cutouts, translucent radio/tutorial HUD, map open/close, pause/resume and
+  900x650 resize/minimize/restore. Normal close: 5,918 submissions, zero issues.
+- HMMWV: cockpit/windshield, third-person driving (about 8 m), road/building
+  textures, dust, animated flag, vehicle/object shadows, HUD/map, pause/resume
+  and 900x650 resize/minimize/restore. Normal close: 6,272 submissions, zero issues.
+
+Khronos core/synchronization validation was enabled through those shutdowns.
+Vulkan menu/intro timed shutdown also passed (1,442 submissions, zero issues).
+Vulkan-enabled and GL33-only builds and the focused tests above pass; the final
+stock case passes 265 assertions ON / 173 OFF. The 266 driver-free guards include
+an intentional mocked teardown error, not a live validation failure. Default
+GL33 in both executables rendered the menu/intro and reached timed exit 0;
+Vulkan remains opt-in. The known stale EOS overlay-manifest loader message is
+an unrelated environment warning, not a Khronos validation finding.
+All 7,606 protected game/resource files retain their initial count, length and
+modification time. Stock missions, textures and localization were not edited.
+
+Remaining differences: sky/cloud appearance and low-sun fence/foliage rendering
+are visibly different from GL33 and predate these changes; Vulkan remains fully
+resident rather than implementing GL33's texture-size/residency policy. Explicit
+IsWater/full material-specular support remains limited as documented earlier.
+Highest-value next visual-parity milestone: diagnose the low-sun object-lighting
+difference on the matched HMMWV fence, using GL33 as reference, without further
+global texture sharpening or speculative fog changes.
