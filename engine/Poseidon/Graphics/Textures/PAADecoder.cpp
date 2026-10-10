@@ -553,6 +553,29 @@ std::vector<DecodedImage> DecodeStoredLevels(const void* data, size_t size, bool
                 return {};
             in.seekg(offsets[level], QIOS::beg);
         }
+        // PacLevelMem supports dimensions >= 2. A valid stored 1-pixel tail
+        // must not invalidate the larger levels already decoded. Check its
+        // dimensions and payload before retaining that supported prefix.
+        if (!levels.empty())
+        {
+            const int start = in.tellg();
+            int width = fgetiw(in), height = fgetiw(in);
+            if (width == 1234 && height == 8765) // PacLevelMem's LZW header
+            {
+                width = fgetiw(in);
+                height = fgetiw(in);
+            }
+            if (width == 1 || height == 1)
+            {
+                const int payload = fgeti24(in);
+                if (in.fail() || width != std::max(1, levels.back().width / 2) ||
+                    height != std::max(1, levels.back().height / 2) || payload <= 0 ||
+                    size_t(in.tellg()) > size || size_t(payload) > size - size_t(in.tellg()))
+                    return {};
+                break;
+            }
+            in.seekg(start, QIOS::beg);
+        }
         PacLevelMem mip;
         const int result = mip.Init(in, format);
         if (result > 0)

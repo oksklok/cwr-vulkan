@@ -76,6 +76,32 @@ TEST_CASE("PAADecoder: original memory mip chain preserves sizes pixels alpha an
     REQUIRE(DecodePAAMipChainBuffer(bytes.data(), bytes.size(), true).empty());
 }
 
+TEST_CASE("PAADecoder: stored one-pixel tails retain supported fixture levels", "[Graphics][PAADecoder]")
+{
+    for (const char* name : {"texture/paa/synthetic_dxt1.paa", "paa/synthetic_dxt5.paa", "texture/pac/synthetic_default.pac"})
+    {
+        INFO(name);
+        std::ifstream file(GET_FIXTURE(name), std::ios::binary);
+        std::vector<char> bytes((std::istreambuf_iterator<char>(file)), {});
+        const bool paa = std::string(name).ends_with(".paa");
+        const auto top = DecodePAABuffer(bytes.data(), bytes.size(), paa);
+        const auto levels = DecodePAAMipChainBuffer(bytes.data(), bytes.size(), paa);
+        REQUIRE(top.valid());
+        REQUIRE(levels.size() == (top.width == 64 ? 6 : 5));
+        REQUIRE(levels.front().rgba == top.rgba);
+        REQUIRE(levels.back().width == 2);
+        REQUIRE(levels.back().height == 2);
+    }
+    // Valid raw 2x2 + 1x1 tail, then a truncated payload and malformed dimensions.
+    std::vector<uint8_t> bytes{0x88, 0x88, 0, 0, 2, 0, 2, 0, 16, 0, 0};
+    bytes.resize(27, 255);
+    bytes.insert(bytes.end(), {1, 0, 1, 0, 4, 0, 0, 255, 255, 255, 255});
+    REQUIRE(DecodePAAMipChainBuffer(bytes.data(), bytes.size(), true).size() == 1);
+    REQUIRE(DecodePAAMipChainBuffer(bytes.data(), bytes.size() - 1, true).empty());
+    bytes[29] = 2;
+    REQUIRE(DecodePAAMipChainBuffer(bytes.data(), bytes.size(), true).empty());
+}
+
 TEST_CASE("PAADecoder: stock bank mip chains agree with the existing top decoder", "[Graphics][PAADecoder][.stock-mips]")
 {
     const char* root = std::getenv("CWR_STOCK_DATA");
