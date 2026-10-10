@@ -1497,3 +1497,43 @@ partial blocks and truncated payloads. Both builds pass; focused checks pass
 826 assertions ON / 814 OFF, stock mip checks 265 / 173. No new gameplay visual
 improvement or performance result is claimed; the previous live validation
 results were not rerun for this narrowly scoped CPU conversion fix.
+
+## Framebuffer gamma: reproduction (2026-10-10)
+
+This work starts from `45a6033` on main, retaining the repository-owner and DXT1
+rounding follow-ups to requested baseline `209657c`. There was no unstaged
+documentation edit at the start. The saved pre-change executable is
+`build/vulkan-local/apps/cwr/Game/PoseidonGame-gamma-before.exe`, SHA256
+`C045FADFEF8232D03806D783D9701A61566EC53D1FC667C44DC7DA02D752EFAA`.
+
+GL33's ApplyGammaPass copies the completed default framebuffer to RGBA8 and
+draws a nearest-sampled fullscreen triangle with pow(rgb, 1/gamma). It runs
+after scene/HUD composition, with blending/depth/culling disabled. Vulkan's
+shape.frag instead applied pow before fixed-function alpha/additive blending,
+including software geometry and ordered screen batches. Projected shadows
+darkened an already-corrected destination. For example, a 50% white fragment
+over black at gamma 2 produced 0.5 instead of sqrt(0.5), approximately 0.707.
+This is an ordering defect, not evidence for changing cloud colors or opacity.
+
+The existing Infantry camera/weather sweep was repeated at gamma 0.6, 1.0,
+and 1.6, with the same 800x600 copied profile, brightness 1.6, fixed cameras,
+date/weather/visibility and frozen simulation. Evidence is in
+`build/shadow-live/gamma-before-{vk,gl33}-{06,10,16}`: clear noon, partial sunset,
+heavy overcast, foggy overcast dawn, night and moon-facing views. Baseline Vulkan
+normal closes reported 3351/2947/3475 frames and zero core/synchronization
+validation errors or warnings. The GL33 references also closed normally.
+
+The fixed sky crop x=5..794, y=105..319 has Vulkan/GL33 mean absolute RGB error
+in 8-bit levels of 1.953/4.670/2.393 at sunset for gamma 1/0.6/1.6, respectively;
+heavy overcast is 5.721/8.459/4.288. These are observations, not a deterministic
+parity score: cloud positions and subtitle/mission timing differ between runs.
+Non-unit gamma amplifies some differences and masks others. Gamma-1 residuals
+are explicitly retained as a separate comparison, not assigned to gamma.
+
+An actual SmokeShell throw was also observed in `gamma-smoke-before-vk-16`:
+the initial full Infantry inventory rejected the added magazine. Removing
+HandGrenade magazines in the disposable runtime session allowed SmokeShell
+selection; a mouse throw consumed it and produced a visible white smoke plume.
+No stock mission or asset was edited. The run closed normally with 10512 frames,
+zero validation findings. Further matched smoke/HUD comparisons and corrected
+renderer results follow below; selection/eval success alone is not smoke coverage.
