@@ -518,3 +518,11 @@ cases/46 assertions passed. RTX menu and Take the Car captures under
 `build/gameplay-live/state-*` were inspected for translucent UI/HUD, cutout
 foliage and software geometry; resize/restore and close passed, 81/71 submissions,
 zero Khronos core/synchronization validation issues through shutdown.
+
+Original stored PAA/PAC mip chains are now exposed by `DecodePAAMipChainBuffer`,
+using the same palette/PacLevelMem traversal and RGBA conversion as the unchanged
+top-level API. Sequential and OFFS-indexed sources retain valid shorter chains.
+Synthetic size/order/alpha/short-chain tests and actual bank-backed `domek1_front_okna`,
+`domek2_side`, `detail_dx`, Abel `rwn` and `s3` checks passed: 24 cases/4318 assertions.
+Top-only Vulkan texture regression was visually checked with resize/restore/close,
+zero validation issues. GPU mip upload follows separately.

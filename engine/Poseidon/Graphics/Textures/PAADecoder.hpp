@@ -40,6 +40,10 @@ DecodedImage DecodePAAFileMip(const std::string& path, int mipLevel);
 // Decode from memory buffer (for embedded/archive use)
 DecodedImage DecodePAABuffer(const void* data, size_t size, bool isPaa);
 
+// Original stored mip levels, largest first, decoded from one archive/memory source.
+// A valid shorter chain is retained; no resampling or mip generation is performed.
+std::vector<DecodedImage> DecodePAAMipChainBuffer(const void* data, size_t size, bool isPaa);
+
 // Three-way alpha classification of a decoded RGBA8888 buffer. This is the
 // per-texture signal a section-sort renderer needs (ArmA1-style): only a Blend
 // texture (partial-alpha texels present) must be deferred to the back-to-front

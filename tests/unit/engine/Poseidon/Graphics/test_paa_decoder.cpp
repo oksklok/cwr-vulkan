@@ -5,11 +5,94 @@
 #include <vector>
 #include "test_fixtures.hpp"
 #include <Poseidon/Graphics/Textures/PAADecoder.hpp>
+#include <Poseidon/IO/Streams/QBStream.hpp>
+#include <cstdlib>
 #include <stddef.h>
 #include <string>
 #include <vector>
 
 using namespace Poseidon;
+
+TEST_CASE("PAADecoder: original memory mip chain preserves sizes pixels alpha and shorter chains", "[Graphics][PAADecoder]")
+{
+    // Raw ARGB8888 uses the same PacLevelMem header walk as compressed stock assets.
+    std::vector<uint8_t> bytes{0x88, 0x88, 0, 0};
+    auto append = [&](unsigned value, int count)
+    {
+        for (int i = 0; i < count; ++i)
+            bytes.push_back(uint8_t(value >> (8 * i)));
+    };
+    for (int size : {8, 4, 2})
+    {
+        append(size, 2);
+        append(size, 2);
+        append(size * size * 4, 3);
+        for (int i = 0; i < size * size; ++i)
+        {
+            bytes.push_back(3);
+            bytes.push_back(2);
+            bytes.push_back(uint8_t(size));
+            bytes.push_back(uint8_t(size * 10));
+        }
+    }
+    append(0, 4);
+    const auto levels = DecodePAAMipChainBuffer(bytes.data(), bytes.size(), true);
+    REQUIRE(levels.size() == 3);
+    for (size_t i = 0; i < levels.size(); ++i)
+    {
+        const auto& image = levels[i];
+        REQUIRE(image.width == (8 >> i));
+        REQUIRE(image.height == image.width);
+        REQUIRE(image.rgba.size() == size_t(image.width * image.height * 4));
+        REQUIRE(image.rgba[0] == image.width);
+        REQUIRE(image.rgba[1] == 2);
+        REQUIRE(image.rgba[2] == 3);
+        REQUIRE(image.rgba[3] == image.width * 10);
+    }
+    REQUIRE(DecodePAABuffer(bytes.data(), bytes.size(), true).rgba == levels[0].rgba);
+    // Stop after a valid 8x8 top level: no fabricated levels needed to reach 1x1.
+    bytes.resize(4 + 7 + 8 * 8 * 4);
+    append(0, 4);
+    REQUIRE(DecodePAAMipChainBuffer(bytes.data(), bytes.size(), true).size() == 1);
+    REQUIRE(DecodePAAMipChainBuffer(nullptr, 0, true).empty());
+    bytes.resize(bytes.size() - 10);
+    REQUIRE(DecodePAAMipChainBuffer(bytes.data(), bytes.size(), true).empty());
+}
+
+TEST_CASE("PAADecoder: stock bank mip chains agree with the existing top decoder", "[Graphics][PAADecoder][.stock-mips]")
+{
+    const char* root = std::getenv("CWR_STOCK_DATA");
+    if (!root)
+        SKIP("Set CWR_STOCK_DATA to the authorized stock game directory");
+    struct Banks
+    {
+        bool previous = GUseFileBanks;
+        ~Banks() { QIFStreamB::ClearBanks(); GUseFileBanks = previous; }
+    } banks;
+    GUseFileBanks = true;
+    const std::string directory = std::string(root) + "/dta/";
+    GFileBanks.Load(directory.c_str(), "", "data", true);
+    GFileBanks.Load(directory.c_str(), "", "abel", true);
+    for (const char* name : {"data\\domek1_front_okna.pac", "data\\domek2_side.paa", "data\\detail_dx.paa", "abel\\rwn.paa", "abel\\s3.paa"})
+    {
+        INFO(name);
+        QIFStreamB source;
+        source.AutoOpen(name);
+        REQUIRE_FALSE(source.fail());
+        REQUIRE(source.rest() > 0);
+        const bool paa = std::string(name).ends_with(".paa");
+        const auto chain = DecodePAAMipChainBuffer(source.act(), source.rest(), paa);
+        REQUIRE(chain.size() > 1);
+        const auto top = DecodePAABuffer(source.act(), source.rest(), paa);
+        REQUIRE(chain[0].rgba == top.rgba);
+        for (size_t i = 1; i < chain.size(); ++i)
+        {
+            REQUIRE(chain[i].width == std::max(1, chain[i - 1].width / 2));
+            REQUIRE(chain[i].height == std::max(1, chain[i - 1].height / 2));
+            REQUIRE(chain[i].rgba.size() == size_t(chain[i].width * chain[i].height * 4));
+        }
+    }
+}
 
 // Reproducers the fuzz_paa libFuzzer harness found. Pre-fix
 // each was a heap-buffer-overflow in DecodePAABuffer; the dimension/payload guards

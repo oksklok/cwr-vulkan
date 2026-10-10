@@ -400,33 +400,11 @@ bool ReadPAAInfo(const std::string& path, PAAInfo& info)
     return info.width > 0 && info.height > 0;
 }
 
-DecodedImage DecodePAABuffer(const void* data, size_t size, bool isPaa)
+namespace
+{
+DecodedImage DecodeStoredMip(QIStream& in, PacLevelMem& mip, const PacPalette& pal, PacFormat format, bool isPaa)
 {
     DecodedImage img;
-    QIStream in(static_cast<const char*>(data), static_cast<int>(size));
-
-    int desc = fgetiw(in);
-    bool alpha = false;
-    PacFormat format = PacFormatFromDesc(desc, alpha);
-    if (format == PacFormatN)
-    {
-        in.seekg(-2, QIOS::cur);
-        format = isPaa ? PacARGB4444 : PacP8;
-    }
-
-    PacPalette pal;
-    int offsets[16];
-    for (int i = 0; i < 16; i++)
-        offsets[i] = -1;
-    if (pal.Load(in, offsets, 16))
-        return img;
-
-    PacLevelMem mip;
-    if (offsets[0] >= 0)
-        mip.SetStart(offsets[0]);
-    if (mip.Init(in, format) != 0)
-        return img;
-
     img.width = mip._w;
     img.height = mip._h;
     // Dimensions come from the mip header; reject absurd sizes before width*height*4
@@ -455,7 +433,7 @@ DecodedImage DecodePAABuffer(const void* data, size_t size, bool isPaa)
         in.read(reinterpret_cast<char*>(rawData.data()), dSize);
         // The conversion loop below reads width*height*4 raw bytes; reject a payload
         // too small to cover them rather than read past rawData (heap over-read).
-        if (static_cast<int>(rawData.size()) < img.width * img.height * 4)
+        if (in.fail() || static_cast<int>(rawData.size()) < img.width * img.height * 4)
         {
             img.rgba.clear();
             return img;
@@ -490,7 +468,7 @@ DecodedImage DecodePAABuffer(const void* data, size_t size, bool isPaa)
         // compressed payload too small to cover them rather than read past dxtData.
         int blockBytes = (format == PacDXT1) ? 8 : 16;
         int blocks = ((img.width + 3) / 4) * ((img.height + 3) / 4);
-        if (static_cast<int>(dxtData.size()) < blocks * blockBytes)
+        if (in.fail() || static_cast<int>(dxtData.size()) < blocks * blockBytes)
         {
             img.rgba.clear();
             return img;
@@ -543,6 +521,69 @@ DecodedImage DecodePAABuffer(const void* data, size_t size, bool isPaa)
     }
 
     return img;
+}
+
+std::vector<DecodedImage> DecodeStoredLevels(const void* data, size_t size, bool isPaa, bool allLevels)
+{
+    std::vector<DecodedImage> levels;
+    if (!data || size < 2 || size > INT_MAX)
+        return levels;
+    QIStream in(data, static_cast<int>(size));
+    bool alpha = false;
+    PacFormat format = PacFormatFromDesc(fgetiw(in), alpha);
+    if (format == PacFormatN)
+    {
+        in.seekg(-2, QIOS::cur);
+        format = isPaa ? PacARGB4444 : PacP8;
+    }
+    PacPalette pal;
+    int offsets[16];
+    std::fill_n(offsets, 16, -1);
+    if (pal.Load(in, offsets, 16))
+        return levels;
+    for (int level = 0; level < 16; ++level)
+    {
+        // OFFS tables may end before dimensions reach 1x1. Sequential sources
+        // instead end at the ordinary zero-sized PacLevelMem terminator.
+        if (offsets[0] >= 0 && offsets[level] <= 0)
+            break;
+        if (offsets[level] >= 0)
+        {
+            if (size_t(offsets[level]) >= size)
+                return {};
+            in.seekg(offsets[level], QIOS::beg);
+        }
+        PacLevelMem mip;
+        const int result = mip.Init(in, format);
+        if (result > 0)
+            break;
+        if (result < 0 || in.fail())
+            return {};
+        const int next = in.tellg();
+        auto image = DecodeStoredMip(in, mip, pal, format, isPaa);
+        if (!image.valid())
+            return {};
+        if (!levels.empty() && (image.width != std::max(1, levels.back().width / 2) ||
+                               image.height != std::max(1, levels.back().height / 2)))
+            return {};
+        levels.push_back(std::move(image));
+        if (!allLevels || next >= int(size))
+            break;
+        in.seekg(next, QIOS::beg);
+    }
+    return levels;
+}
+} // namespace
+
+DecodedImage DecodePAABuffer(const void* data, size_t size, bool isPaa)
+{
+    auto levels = DecodeStoredLevels(data, size, isPaa, false);
+    return levels.empty() ? DecodedImage{} : std::move(levels.front());
+}
+
+std::vector<DecodedImage> DecodePAAMipChainBuffer(const void* data, size_t size, bool isPaa)
+{
+    return DecodeStoredLevels(data, size, isPaa, true);
 }
 
 DecodedImage DecodePAAFile(const std::string& path)
