@@ -85,6 +85,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanContext::ValidationMessage(VkDebugUtilsMess
 void VulkanContext::CreateInstance(const char* const* extensions, uint32_t count, bool validation)
 {
     _profile.enabled = std::getenv("CWR_VK_PROFILE") != nullptr;
+    const char* ssao = std::getenv("CWR_VK_SSAO");
+    _ssaoEnabled = ssao && std::strcmp(ssao, "1") == 0;
     const char* batching = std::getenv("CWR_VK_SCREEN_BATCH");
     _batchScreens = !batching || std::strcmp(batching, "0") != 0;
     if (_instance)
@@ -363,6 +365,7 @@ void VulkanContext::DestroySwapchain() noexcept
     for (VkFramebuffer framebuffer : _framebuffers)
         vkDestroyFramebuffer(_device, framebuffer, nullptr);
     _framebuffers.clear();
+    DestroySSAOResources();
     DestroyGammaResources();
     for (auto view : _sampledDepthViews)
         if (view)
@@ -381,6 +384,9 @@ void VulkanContext::DestroySwapchain() noexcept
     if (_renderPass)
         vkDestroyRenderPass(_device, _renderPass, nullptr);
     _renderPass = VK_NULL_HANDLE;
+    if (_resumePass)
+        vkDestroyRenderPass(_device, _resumePass, nullptr);
+    _resumePass = VK_NULL_HANDLE;
     for (VkImageView view : _views)
         vkDestroyImageView(_device, view, nullptr);
     _views.clear();
@@ -474,10 +480,10 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-    const VkAttachmentDescription attachments[] = {attachment, depthAttachment};
+    VkAttachmentDescription attachments[] = {attachment, depthAttachment};
     const VkAttachmentReference depthReference{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     VkAttachmentReference reference{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
     VkSubpassDescription subpass{};
@@ -492,8 +498,9 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
     dependency.srcStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
                               VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     dependency.dstStageMask = dependency.srcStageMask;
-    dependency.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+    dependency.srcAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+                               VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
                                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     // Make every scene blend/store visible to the final fullscreen sample.
     dependencies[1].srcSubpass = 0;
@@ -512,6 +519,13 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
     pass.pDependencies = dependencies;
     Check(vkCreateRenderPass(_device, &pass, nullptr, &_renderPass), "create clear render pass");
     Name(VK_OBJECT_TYPE_RENDER_PASS, ObjectHandle(_renderPass), "PoseidonVK scene composition pass");
+    // Compatible pipelines/framebuffers, preserving scene color/depth/stencil
+    // when resuming after AO. No geometry or UI is replayed.
+    attachments[0].loadOp = attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    attachments[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    attachments[0].initialLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    attachments[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+    Check(vkCreateRenderPass(_device, &pass, nullptr, &_resumePass), "create scene resume pass");
 
     _views.reserve(_images.size());
     _framebuffers.reserve(_images.size());
@@ -554,6 +568,7 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
         Name(VK_OBJECT_TYPE_SEMAPHORE, ObjectHandle(rendered), (prefix + " present").c_str());
     }
     CreateGammaPass(format.format);
+    CreateSSAOResources(format.format);
     _recreate = false;
     std::fprintf(stderr, "Vulkan: swapchain #%u ready: %ux%u, %zu images, format=%d, present mode=%d\n",
                  ++_swapchainGeneration, _extent.width, _extent.height, _images.size(), format.format,
@@ -802,6 +817,9 @@ void VulkanContext::ReportProfile()
         _profile.stateCommands[4] / frames, _profile.stateCommands[5] / frames,
         _profile.stateCommands[6] / frames, _profile.stateCommands[7] / frames);
     const double last = _profile.lastEnd;
+    std::fprintf(stderr, "Vulkan SSAO: enabled=%d passes/frame=%.2f record_ms/frame=%.4f radius=%.2f strength=%.2f bias=%.3f fade=%.1f\n",
+                 int(_ssaoEnabled), _profile.ssaoPasses / frames, _profile.ssaoMs / frames,
+                 _ssaoSettings[1], _ssaoSettings[0], _ssaoSettings[2], _ssaoSettings[3]);
     _profile = {};
     _profile.enabled = true;
     _profile.lastEnd = last;

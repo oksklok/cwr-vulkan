@@ -3,6 +3,8 @@
 #include <Poseidon/Graphics/Shared/WindowPlacement.hpp>
 #include <Poseidon/Foundation/Logging/Logging.hpp>
 #include <Poseidon/Foundation/Platform/AppConfig.hpp>
+#include <Poseidon/World/Scene/Scene.hpp>
+#include <Poseidon/World/Scene/Camera/Camera.hpp>
 #include <SDL3/SDL_vulkan.h>
 #include <algorithm>
 #include <stdexcept>
@@ -142,6 +144,7 @@ void EngineVK::InitDraw(bool clear, PackedColor color)
             FireResizePostHook(_width, _height);
         }
         Engine::InitDraw(clear, color);
+        _worldEffectsPending = false;
         if (clear)
             Clear(false, true, color);
     }
@@ -154,9 +157,39 @@ void EngineVK::InitDraw(bool clear, PackedColor color)
 void EngineVK::Clear(bool clearZ, bool clear, PackedColor color)
 {
     if (clearZ)
+    {
+        // Vehicle/weapon interior views replace world depth with a short-range
+        // projection. Composite the world before that destructive clear.
+        FinishWorldEffects();
         _vk.ClearDepth();
+    }
     if (clear)
         _vk.Clear(((color >> 16) & 255) / 255.0f, ((color >> 8) & 255) / 255.0f, (color & 255) / 255.0f, 1.0f);
+}
+
+void EngineVK::BeginWorldEffects(bool enabled)
+{
+    _worldEffectsPending = enabled && _vk.FrameOpen();
+    if (_worldEffectsPending && GScene && GScene->GetCamera())
+    {
+        const auto& p = GScene->GetCamera()->ProjectionNormal();
+        _worldProjection = {p(0, 0), p(1, 1), p(2, 2), p.Position().Z()};
+    }
+    else
+        _worldEffectsPending = false;
+}
+
+void EngineVK::FinishWorldEffects()
+{
+    if (!_worldEffectsPending)
+        return;
+    _worldEffectsPending = false;
+    _vk.DrawSSAO(_worldProjection);
+}
+
+bool EngineVK::SetSSAO(bool enabled, float strength, float radius, float bias, float fade)
+{
+    return _vk.SetSSAO(enabled, strength, radius, bias, fade);
 }
 
 void EngineVK::FinishDraw()

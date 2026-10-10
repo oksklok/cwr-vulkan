@@ -53,6 +53,17 @@
 #include <Poseidon/Foundation/platform.hpp>
 
 using namespace Poseidon;
+// Optional backend feature; GL33 returns false and remains unchanged.
+static GameValue TriSSAO(const GameState*, GameValuePar arg)
+{
+    const auto& a = static_cast<const GameArrayType&>(arg);
+    if (a.Size() != 5 || !GEngine)
+        return GameValue(false);
+    for (int i = 0; i < 5; ++i)
+        if (a[i].GetType() != GameScalar)
+            return GameValue(false);
+    return GameValue(GEngine->SetSSAO(float(a[0]) != 0, float(a[1]), float(a[2]), float(a[3]), float(a[4])));
+}
 namespace Poseidon
 {
 } // namespace Poseidon
@@ -3049,6 +3060,7 @@ INIT_MODULE(GameStateExtTest, 3)
     GGameState.NewFunction(GameFunction(GameString, "triCheatSkipTime", TriCheatSkipTime, GameScalar));
     GGameState.NewFunction(GameFunction(GameString, "triTeleportPlayerTo", TriTeleportPlayerTo, GameArray));
     GGameState.NewFunction(GameFunction(GameString, "triSetView", TriSetView, GameArray));
+    GGameState.NewFunction(GameFunction(GameBool, "triSSAO", TriSSAO, GameArray));
     GGameState.NewFunction(GameFunction(GameString, "triSetPlayerFaceView", TriSetPlayerFaceView, GameArray));
     GGameState.NewFunction(GameFunction(GameString, "triSetRoleFaceView", TriSetRoleFaceView, GameArray));
     GGameState.NewFunction(GameFunction(GameString, "triRoleFaceTexture", TriRoleFaceTexture, GameScalar));

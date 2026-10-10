@@ -373,6 +373,10 @@ class Engine : public IGraphicsEngine
     virtual void InitDraw(bool clear = false, PackedColor color = PackedColor(0)); // Begin scene
     virtual void FinishDraw();                                                     // End scene
     virtual void DrawTestPattern(const char* /*name*/) {} // Harness-only: draw named test pattern
+    // Optional backend post-effect boundary, before cockpit/HUD/map composition.
+    virtual void BeginWorldEffects(bool /*enabled*/) {}
+    virtual void FinishWorldEffects() {}
+    virtual bool SetSSAO(bool, float, float, float, float) { return false; }
     virtual void NextFrame();                             // swap frames - get ready for next frame
     virtual bool InitDrawDone() { return true; }
     void Pause() override = 0;   // stop and prepare everything for GDI

@@ -2065,3 +2065,27 @@ geometry, shadows, firing, map, 800x600 -> 960x640 resize and minimize/restore.
 `ssao-depth-resize-vk` visibly resumed gameplay and exited 0 with zero core/sync
 validation errors or warnings through shutdown. Evidence is ignored locally
 under `build/shadow-live/ssao-depth*`.
+
+### Basic SSAO pass
+
+SSAO is opt-in with `CWR_VK_SSAO=1` before launch. The existing developer
+console/harness can toggle/tune it with `triSSAO [1,0.7,1.2,0.03,80]`
+(enabled, strength, radius metres, bias metres, fade distance metres); use
+zero for enabled to disable. Invalid/nonfinite parameters are rejected without
+changing state. GL33 returns false and its rendering code is unchanged.
+
+One fullscreen draw reconstructs view positions/normals from depth, samples a
+fixed eight-direction kernel, and multiplicatively blends restrained occlusion
+into existing scene color. World geometry/shadows/transparency precede AO;
+cockpit/weapon overlays, HUD/map/UI and the unchanged final gamma pass follow.
+Interior depth clears trigger the world composite before replacing its depth
+projection. Menu/briefing/map/pause rendering skips AO. A compatible LOAD pass
+resumes color/depth/stencil afterward. No extra images, geometry pass, per-frame
+allocations, blur, temporal history or material changes are introduced.
+
+Initial Steal the Car off/on, movement/fire/reload, map/pause and resize/restore
+checks passed (`ssao-basic2-vk`): normal exit 0, 4,224 submitted / 4,223 presented,
+zero core/synchronization validation errors/warnings through shutdown. Both
+builds pass; stock-backed focused tests pass 1,693 Vulkan / 1,498 GL33 assertions;
+driver-free policy tests pass 295 checks, including AO toggle/parameter guards.
+Broader visual tuning and performance qualification follow separately.

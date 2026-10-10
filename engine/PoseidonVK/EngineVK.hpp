@@ -27,6 +27,9 @@ class EngineVK final : public Engine
     bool HasFailed() const noexcept { return _failed; }
     void InitDraw(bool clear = false, PackedColor color = PackedColor(0)) override;
     void FinishDraw() override;
+    void BeginWorldEffects(bool enabled) override;
+    void FinishWorldEffects() override;
+    bool SetSSAO(bool enabled, float strength, float radius, float bias, float fade) override;
     bool InitDrawDone() override { return _vk.FrameOpen(); }
     bool IsAbleToDraw() override { return !_failed && !_paused && IsOpen(); }
     void Clear(bool clearZ = true, bool clear = true, PackedColor color = PackedColor(0)) override;
@@ -129,6 +132,8 @@ class EngineVK final : public Engine
     bool _videoInitialized = false;
     bool _paused = false;
     bool _failed = false;
+    bool _worldEffectsPending = false;
+    std::array<float, 4> _worldProjection{};
     bool _meshPrepared = false;
     int _bias = 0;
     Matrix4 _shapeModelView;

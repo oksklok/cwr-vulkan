@@ -1502,6 +1502,7 @@ void World::Simulate(float deltaT, bool& enableDraw)
                 }
 
                 perf.Mark(Dev::FrameProfiler::PhaseDrawObjPrep);
+                GEngine->BeginWorldEffects(_mode != GModeIntro && !_forceMap && !HasOptions());
                 _scene.GetLandscape()->Draw(_scene);
                 perf.Mark(Dev::FrameProfiler::PhaseDrawLandscape);
 
@@ -1510,6 +1511,7 @@ void World::Simulate(float deltaT, bool& enableDraw)
 
                 _scene.ObjectsDrawn();
                 GEngine->FlushQueues();
+                GEngine->FinishWorldEffects();
 
                 // Frame validation — ExtractSceneInputs → BuildFrame →
                 // ValidateFrame + runtime checks, after the world's

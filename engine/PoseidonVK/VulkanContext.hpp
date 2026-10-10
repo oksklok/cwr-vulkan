@@ -129,6 +129,9 @@ class VulkanContext
                   VkDeviceSize indexOffset = 0, bool depthWrite = true, const ShapeLighting* lighting = nullptr,
                   bool shadow = false, bool additive = false);
     void EndFrame();
+    bool SetSSAO(bool enabled, float strength, float radius, float bias, float fade);
+    bool SSAOEnabled() const { return _ssaoEnabled; }
+    void DrawSSAO(const std::array<float, 4>& projection);
     bool FrameOpen() const { return _frameOpen; }
     VkExtent2D Extent() const { return _extent; }
     const std::string& DeviceName() const { return _deviceName; }
@@ -174,6 +177,8 @@ class VulkanContext
         double lastEnd = 0, frameStart = 0;
         double recordMs = 0, geometryMs = 0, textureMs = 0, fenceMs = 0, retireMs = 0, acquireMs = 0, presentMs = 0;
         double commandStart = 0, commandMs = 0, submitMs = 0, retentionMs = 0, bindingMs = 0;
+        double ssaoMs = 0;
+        uint64_t ssaoPasses = 0;
         // Pipeline, textures, lighting, vertex, index, viewport, scissor, push constants.
         std::array<uint64_t, 8> stateCommands{};
         uint64_t transient = 0, allocations = 0, textureUploads = 0, litDraws = 0, localLights = 0;
@@ -241,6 +246,7 @@ class VulkanContext
     void CreateTextureLayout();
     VkSwapchainKHR _swapchain = VK_NULL_HANDLE;
     VkRenderPass _renderPass = VK_NULL_HANDLE;
+    VkRenderPass _resumePass = VK_NULL_HANDLE;
     struct DepthAttachment
     {
         VkImage image = VK_NULL_HANDLE;
@@ -257,6 +263,7 @@ class VulkanContext
         VkDescriptorSet set = VK_NULL_HANDLE;
         VkDescriptorSet depthSet = VK_NULL_HANDLE;
         VkFramebuffer framebuffer = VK_NULL_HANDLE;
+        VkFramebuffer ssaoFramebuffer = VK_NULL_HANDLE;
     };
     std::vector<GammaTarget> _gammaTargets;
     VkRenderPass _gammaPass = VK_NULL_HANDLE;
@@ -267,6 +274,13 @@ class VulkanContext
     void CreateGammaPass(VkFormat format);
     void DrawGammaPass();
     void DestroyGammaResources() noexcept;
+    bool _ssaoEnabled = false;
+    std::array<float, 4> _ssaoSettings{0.7f, 1.2f, 0.03f, 80.f}; // strength, radius/bias metres, fade metres
+    VkRenderPass _ssaoPass = VK_NULL_HANDLE;
+    VkPipelineLayout _ssaoLayout = VK_NULL_HANDLE;
+    VkPipeline _ssaoPipeline = VK_NULL_HANDLE;
+    void CreateSSAOResources(VkFormat format);
+    void DestroySSAOResources() noexcept;
     VkFormat _depthFormat = VK_FORMAT_UNDEFINED;
     VkPipelineLayout _shapeLayout = VK_NULL_HANDLE;
     std::array<VkPipeline, 8> _shapePipelines{};

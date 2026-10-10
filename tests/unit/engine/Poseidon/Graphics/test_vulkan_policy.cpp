@@ -5,6 +5,7 @@
 #include <cstring>
 #include <stdexcept>
 #include <type_traits>
+#include <limits>
 
 namespace
 {
@@ -332,6 +333,16 @@ int main()
         Check(ShapeRasterization(true).cullMode == VK_CULL_MODE_NONE,
               "projected shadows retain their existing uncullled rasterization");
         VulkanContext context;
+        Check(!context.SSAOEnabled(), "SSAO must be disabled by default");
+        Check(context.SetSSAO(true, 0.7f, 1.2f, 0.03f, 80), "valid SSAO controls are accepted");
+        Check(context.SSAOEnabled(), "SSAO runtime enable must take effect");
+        Check(!context.SetSSAO(false, std::numeric_limits<float>::quiet_NaN(), 1, 0, 80), "reject NaN SSAO strength");
+        Check(!context.SetSSAO(false, 1, 0, 0, 80), "reject zero SSAO radius");
+        Check(!context.SetSSAO(false, 1, 1, 1, 80), "reject SSAO bias covering its radius");
+        Check(!context.SetSSAO(false, 1, 1, 0, std::numeric_limits<float>::infinity()), "reject infinite SSAO distance");
+        Check(context.SSAOEnabled(), "invalid controls must not partially change SSAO state");
+        context.DrawSSAO({1, 1, 1.001f, -0.1f}); // No acquired frame: no driver commands/resources.
+        Check(context.SetSSAO(false, 0.7f, 1.2f, 0.03f, 80) && !context.SSAOEnabled(), "SSAO toggles off without recreation");
         CheckThrows<std::logic_error>([&] { context.DrawDiagnosticTriangle(); },
                                       "indexed draw must require an acquired recording frame");
         Check(!context.Instance() && !context.FrameOpen(), "context must start empty");
