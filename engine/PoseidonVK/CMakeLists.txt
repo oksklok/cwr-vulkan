@@ -4,10 +4,13 @@ if(NOT Vulkan_GLSLANG_VALIDATOR_EXECUTABLE)
     message(FATAL_ERROR "Vulkan shaders require glslangValidator from the installed Vulkan SDK")
 endif()
 set(VK_SHADER_HEADERS)
-foreach(kind triangle shape screen)
+foreach(kind triangle shape screen shadow)
     foreach(stage vert frag)
         if(kind STREQUAL "screen" AND stage STREQUAL "frag")
             continue() # Screen vertices reuse the diffuse fragment shader.
+        endif()
+        if(kind STREQUAL "shadow" AND stage STREQUAL "vert")
+            continue() # Native/screen vertices retain the engine's projection.
         endif()
         set(header "${CMAKE_CURRENT_BINARY_DIR}/generated/PoseidonVK/Shaders/${kind}.${stage}.hpp")
         add_custom_command(OUTPUT "${header}"

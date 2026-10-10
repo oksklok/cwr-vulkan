@@ -327,6 +327,12 @@ void VulkanContext::CreateFrameResources()
 
 void VulkanContext::DestroySwapchain() noexcept
 {
+    for (auto& pipeline : _shadowPipelines)
+    {
+        if (pipeline)
+            vkDestroyPipeline(_device, pipeline, nullptr);
+        pipeline = VK_NULL_HANDLE;
+    }
     for (auto& pipeline : _screenPipelines)
     {
         if (pipeline)
@@ -432,7 +438,7 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
     attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // Every acquired image starts with a deterministic clear.
     attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
     _depthFormat = VK_FORMAT_UNDEFINED;
-    for (auto candidate : {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D16_UNORM})
+    for (auto candidate : {VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT})
     {
         VkFormatProperties properties{};
         vkGetPhysicalDeviceFormatProperties(_physical, candidate, &properties);
@@ -443,13 +449,13 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
         }
     }
     if (_depthFormat == VK_FORMAT_UNDEFINED)
-        throw std::runtime_error("Vulkan Shape: no supported depth attachment format");
+        throw std::runtime_error("Vulkan Shape: no supported depth/stencil attachment format");
     VkAttachmentDescription depthAttachment{};
     depthAttachment.format = _depthFormat;
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
@@ -637,8 +643,34 @@ void VulkanContext::ClearDepth()
     vkCmdClearAttachments(_frames[_frame].command, 1, &attachment, 1, &rect);
 }
 
+void VulkanContext::BeginShadowPass()
+{
+    if (_shadowPass)
+        throw std::logic_error("Vulkan projected shadow pass is already active");
+    _shadowPass = true;
+    if (!_frameOpen)
+        return;
+    // All casters share one exclusion mask, so their overlapping polygons do
+    // not darken the same receiver repeatedly. Keep the world's depth intact.
+    VkClearAttachment attachment{};
+    attachment.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
+    VkClearRect rect{};
+    rect.rect.extent = _extent;
+    rect.layerCount = 1;
+    vkCmdClearAttachments(_frames[_frame].command, 1, &attachment, 1, &rect);
+}
+
+void VulkanContext::EndShadowPass()
+{
+    if (!_shadowPass)
+        throw std::logic_error("Vulkan projected shadow pass was not begun");
+    _shadowPass = false;
+}
+
 void VulkanContext::EndFrame()
 {
+    if (_shadowPass)
+        throw std::logic_error("Vulkan frame ended before EndShadowPass");
     if (!_frameOpen)
         return;
     auto& frame = _frames[_frame];
@@ -703,13 +735,15 @@ void VulkanContext::ReportProfile()
         "Vulkan profile: frames=%zu fps=%.2f frame_ms=%.3f p95_ms=%.3f record_ms=%.3f "
         "transient/frame=%.1f allocations/frame=%.1f geometry_upload_ms/frame=%.3f "
         "texture_uploads=%llu texture_upload_ms=%.3f fence_ms/frame=%.3f retire_ms/frame=%.3f acquire_ms/frame=%.3f "
-        "present_ms/frame=%.3f lit_draws/frame=%.1f local_lights/frame=%.1f fog_range=%.1f..%.1f\n",
+        "present_ms/frame=%.3f lit_draws/frame=%.1f local_lights/frame=%.1f fog_range=%.1f..%.1f "
+        "shadow_native/frame=%.1f shadow_software/frame=%.1f shadow_triangles/frame=%.1f\n",
         times.size(), frames * 1000 / total, total / frames, times[size_t((times.size() - 1) * 0.95)],
         _profile.recordMs / frames, _profile.transient / frames, _profile.allocations / frames,
         _profile.geometryMs / frames, static_cast<unsigned long long>(_profile.textureUploads), _profile.textureMs,
         _profile.fenceMs / frames, _profile.retireMs / frames, _profile.acquireMs / frames,
         _profile.presentMs / frames, _profile.litDraws / frames, _profile.localLights / frames,
-        _profile.fogRange[0], _profile.fogRange[1]);
+        _profile.fogRange[0], _profile.fogRange[1], _profile.nativeShadows / frames,
+        _profile.softwareShadows / frames, _profile.shadowTriangles / frames);
     const double last = _profile.lastEnd;
     _profile = {};
     _profile.enabled = true;
@@ -800,6 +834,7 @@ unsigned VulkanContext::Shutdown() noexcept
     _debugNamesEnabled = false;
     _frameOpen = false;
     _recreate = true;
+    _shadowPass = false;
     _frame = 0;
     if (hadInstance)
         std::fprintf(

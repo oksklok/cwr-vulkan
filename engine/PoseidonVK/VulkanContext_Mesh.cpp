@@ -5,6 +5,7 @@
 #include <PoseidonVK/Shaders/shape.vert.hpp>
 #include <PoseidonVK/Shaders/shape.frag.hpp>
 #include <PoseidonVK/Shaders/screen.vert.hpp>
+#include <PoseidonVK/Shaders/shadow.frag.hpp>
 #include <cstdio>
 #include <cstring>
 
@@ -105,7 +106,7 @@ MeshSlice VulkanContext::UploadTransientMesh(const void* vertices, size_t vertex
     }
 }
 
-void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool depthTest, bool depthWrite)
+void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool depthTest, bool depthWrite, bool shadow)
 {
     if (!_shapeLayout)
     {
@@ -135,8 +136,8 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         shader.codeSize = screen ? sizeof(Cwrscreen_vert) : sizeof(Cwrshape_vert);
         shader.pCode = screen ? Cwrscreen_vert : Cwrshape_vert;
         Require(vkCreateShaderModule(_device, &shader, nullptr, &vertex), "create vertex shader");
-        shader.codeSize = sizeof(Cwrshape_frag);
-        shader.pCode = Cwrshape_frag;
+        shader.codeSize = shadow ? sizeof(Cwrshadow_frag) : sizeof(Cwrshape_frag);
+        shader.pCode = shadow ? Cwrshadow_frag : Cwrshape_frag;
         Require(vkCreateShaderModule(_device, &shader, nullptr, &fragment), "create fragment shader");
         VkPipelineShaderStageCreateInfo stages[2]{};
         stages[0].sType = stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -176,6 +177,14 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         depth.depthTestEnable = depthTest;
         depth.depthWriteEnable = depthTest && depthWrite;
         depth.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        if (shadow)
+        {
+            depth.depthTestEnable = VK_TRUE;
+            depth.depthWriteEnable = VK_FALSE;
+            depth.stencilTestEnable = VK_TRUE;
+            depth.front = depth.back = {VK_STENCIL_OP_KEEP, VK_STENCIL_OP_INCREMENT_AND_CLAMP,
+                                        VK_STENCIL_OP_KEEP, VK_COMPARE_OP_EQUAL, 0xff, 0xff, 0};
+        }
         VkPipelineColorBlendAttachmentState attachment{};
         attachment.blendEnable = translucent;
         attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
@@ -183,6 +192,14 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         attachment.colorBlendOp = attachment.alphaBlendOp = VK_BLEND_OP_ADD;
         attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
         attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        if (shadow)
+        {
+            attachment.blendEnable = VK_TRUE;
+            attachment.srcColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+            attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+            attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+        }
         attachment.colorWriteMask =
             VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
         VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
@@ -207,7 +224,8 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         pipeline.renderPass = _renderPass;
         Require(vkCreateGraphicsPipelines(
                     _device, VK_NULL_HANDLE, 1, &pipeline, nullptr,
-                    screen        ? &_screenPipelines[ScreenPipelineIndex(depthTest, translucent, depthWrite)]
+                    shadow        ? &_shadowPipelines[screen ? 1 : 0]
+                    : screen      ? &_screenPipelines[ScreenPipelineIndex(depthTest, translucent, depthWrite)]
                                   : &_shapePipelines[ScreenPipelineIndex(depthTest, translucent, depthWrite)]),
                 "create graphics pipeline");
     }
@@ -231,8 +249,10 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
                              bool blend, bool screen, bool depthTest, const VkRect2D* clip,
                              const std::shared_ptr<TextureImage>& detail, float secondaryMode,
                              const std::array<float, 3>& lightDirection, VkDeviceSize vertexOffset,
-                             VkDeviceSize indexOffset, bool depthWrite, const ShapeLighting* lighting)
+                             VkDeviceSize indexOffset, bool depthWrite, const ShapeLighting* lighting, bool shadow)
 {
+    if (shadow != _shadowPass)
+        throw std::logic_error("Vulkan projected shadow drawing must match BeginShadowPass/EndShadowPass");
     if (!_frameOpen || !mesh || mesh->device != _device || !mesh->vertices.buffer || !mesh->indices.buffer)
         throw std::logic_error("Vulkan Shape: indexed draw needs an open frame and live buffers from this device");
     const VkDeviceSize indexSize = index16 ? 2 : 4;
@@ -241,6 +261,11 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
         throw std::out_of_range("Vulkan Shape: indexed draw exceeds geometry or is not a triangle list");
     if (!count)
         return;
+    if (shadow && _profile.enabled)
+    {
+        ++(screen ? _profile.softwareShadows : _profile.nativeShadows);
+        _profile.shadowTriangles += count / 3;
+    }
     if ((!texture || !detail) && !_whiteTexture)
     {
         const uint32_t white = 0xffffffff;
@@ -252,14 +277,15 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
         throw std::logic_error("Vulkan Shape: texture is not live on this device");
     if (sampler >= 8)
         throw std::out_of_range("Vulkan Shape: sampler index");
-    auto& pipeline = screen  ? _screenPipelines[ScreenPipelineIndex(depthTest, blend, depthWrite)]
+    auto& pipeline = shadow  ? _shadowPipelines[screen ? 1 : 0]
+                    : screen ? _screenPipelines[ScreenPipelineIndex(depthTest, blend, depthWrite)]
                              : _shapePipelines[ScreenPipelineIndex(depthTest, blend, depthWrite)];
     if (!pipeline)
-        CreateShapePipeline(blend, screen, depthTest, depthWrite);
+        CreateShapePipeline(blend, screen, depthTest, depthWrite, shadow);
     if (lighting)
     {
         BindLighting(*lighting, false);
-        if (_profile.enabled)
+        if (_profile.enabled && !shadow)
         {
             ++_profile.litDraws;
             _profile.localLights += uint64_t(lighting->localCount[0]);
@@ -300,6 +326,7 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     constants[20] = alphaCutoff;
     constants[21] = 1 / _gamma;
     constants[22] = detail ? secondaryMode : 0;
+    constants[23] = shadow ? 1.f : 0.f;
     std::copy(lightDirection.begin(), lightDirection.end(), constants.begin() + 24);
     vkCmdPushConstants(frame.command, _shapeLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(constants), constants.data());
@@ -393,7 +420,7 @@ void VulkanContext::CreateDepthAttachment(DepthAttachment& depth)
     view.image = depth.image;
     view.viewType = VK_IMAGE_VIEW_TYPE_2D;
     view.format = _depthFormat;
-    view.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1};
+    view.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1};
     Require(vkCreateImageView(_device, &view, nullptr, &depth.view), "create depth view");
 }
 } // namespace Poseidon::vk

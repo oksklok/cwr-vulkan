@@ -98,7 +98,7 @@ class EngineVK final : public Engine
     void SetMaterial(const TLMaterial&, const LightList&, const render::LegacySpec&) override;
     void BeginShadowPass() override;
     void EndShadowPass() override;
-    bool SupportsProjectedShadows() const override { return false; }
+    bool SupportsProjectedShadows() const override { return true; }
     void SetShadowMapsEnabled(bool enabled) override;
     AbstractTextBank* TextBank() override;
     void TextureDestroyed(Texture*) override;
@@ -146,6 +146,7 @@ class EngineVK final : public Engine
     unsigned _sectionSampler = 0;
     float _sectionAlphaCutoff = 0;
     bool _sectionBlend = false;
+    bool _sectionShadow = false;
     bool _sectionDepthTest = true, _sectionDepthWrite = true;
     int _shapeFlags = 0;
     TLVertexTable* _softwareMesh = nullptr;

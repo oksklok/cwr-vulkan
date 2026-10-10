@@ -67,6 +67,8 @@ class VulkanContext
     bool BeginFrame(uint32_t width, uint32_t height);
     void Clear(float r, float g, float b, float a);
     void ClearDepth();
+    void BeginShadowPass();
+    void EndShadowPass();
     void DrawDiagnosticTriangle(); // Explicit DrawTestPattern seam, never an automatic gameplay draw.
     std::shared_ptr<MeshBuffers> UploadMesh(const void* vertices, size_t vertexBytes, const void* indices,
                                             size_t indexBytes);
@@ -79,7 +81,8 @@ class VulkanContext
                   bool blend = false, bool screen = false, bool depthTest = true, const VkRect2D* clip = nullptr,
                   const std::shared_ptr<TextureImage>& detail = {}, float secondaryMode = 1,
                   const std::array<float, 3>& lightDirection = {0, -1, 0}, VkDeviceSize vertexOffset = 0,
-                  VkDeviceSize indexOffset = 0, bool depthWrite = true, const ShapeLighting* lighting = nullptr);
+                  VkDeviceSize indexOffset = 0, bool depthWrite = true, const ShapeLighting* lighting = nullptr,
+                  bool shadow = false);
     void EndFrame();
     bool FrameOpen() const { return _frameOpen; }
     VkExtent2D Extent() const { return _extent; }
@@ -102,6 +105,7 @@ class VulkanContext
         double lastEnd = 0, frameStart = 0;
         double recordMs = 0, geometryMs = 0, textureMs = 0, fenceMs = 0, retireMs = 0, acquireMs = 0, presentMs = 0;
         uint64_t transient = 0, allocations = 0, textureUploads = 0, litDraws = 0, localLights = 0;
+        uint64_t nativeShadows = 0, softwareShadows = 0, shadowTriangles = 0;
         std::array<float, 2> fogRange{};
         std::vector<double> times;
     } _profile;
@@ -174,8 +178,11 @@ class VulkanContext
     VkPipelineLayout _shapeLayout = VK_NULL_HANDLE;
     std::array<VkPipeline, 8> _shapePipelines{};
     std::array<VkPipeline, 8> _screenPipelines{};
+    std::array<VkPipeline, 2> _shadowPipelines{}; // Native and software projected geometry.
+    bool _shadowPass = false;
     bool _loggedShape = false;
-    void CreateShapePipeline(bool blend = false, bool screen = false, bool depthTest = true, bool depthWrite = true);
+    void CreateShapePipeline(bool blend = false, bool screen = false, bool depthTest = true, bool depthWrite = true,
+                             bool shadow = false);
     void CreateDepthAttachment(DepthAttachment& depth);
     std::vector<VkImage> _images;
     std::vector<VkImageView> _views;

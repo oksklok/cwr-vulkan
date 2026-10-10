@@ -15,14 +15,6 @@ void EngineVK::EmitDraw(const render::frame::Draw&)
 {
     Unsupported("indexed draw emission");
 }
-void EngineVK::BeginShadowPass()
-{
-    Unsupported("shadow passes");
-}
-void EngineVK::EndShadowPass()
-{
-    Unsupported("shadow passes");
-}
 void EngineVK::SetShadowMapsEnabled(bool enabled)
 {
     if (enabled)

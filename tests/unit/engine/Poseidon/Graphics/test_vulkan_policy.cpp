@@ -308,6 +308,11 @@ int main()
         CheckThrows<std::logic_error>([&] { context.BeginFrame(800, 600); }, "uninitialized frame must fail");
         context.Clear(0, 0, 0, 1); // No frame: no Vulkan call.
         context.ClearDepth();
+        CheckThrows<std::logic_error>([&] { context.EndShadowPass(); }, "unmatched shadow pass end must fail");
+        context.BeginShadowPass(); // Minimized/no-frame pass is balanced without Vulkan calls.
+        CheckThrows<std::logic_error>([&] { context.BeginShadowPass(); }, "nested shadow passes must fail");
+        CheckThrows<std::logic_error>([&] { context.EndFrame(); }, "unfinished shadow pass cannot cross frames");
+        context.EndShadowPass();
         const std::array<float, 16> matrix{};
         const std::array<float, 4> color{1, 1, 1, 1};
         CheckThrows<std::invalid_argument>([&] { context.UploadMesh(matrix.data(), sizeof(matrix), matrix.data(), 6); },

@@ -10,6 +10,18 @@
 
 namespace Poseidon
 {
+void EngineVK::BeginShadowPass()
+{
+    if (_activeShape || _softwareMesh)
+        throw std::logic_error("Vulkan shadow pass requires completed mesh submission");
+    _vk.BeginShadowPass();
+}
+void EngineVK::EndShadowPass()
+{
+    if (_activeShape || _softwareMesh)
+        throw std::logic_error("Vulkan shadow pass ended with an active mesh");
+    _vk.EndShadowPass();
+}
 void EngineVK::SetBias(int value)
 {
     _bias = value;
@@ -18,9 +30,11 @@ void EngineVK::SetBias(int value)
 }
 void EngineVK::SetMaterial(const TLMaterial& mat, const LightList& lights, const render::LegacySpec& spec)
 {
-    if (!_activeShape || !vk::SupportedShapeSpec(spec) || !vk::SupportedShapeSpec(render::SplitLegacy(mat.specFlags)))
+    if (!_meshPrepared || !vk::SupportedShapeSpec(spec) || !vk::SupportedShapeSpec(render::SplitLegacy(mat.specFlags)))
         Unsupported("Shape material outside basic diffuse rendering");
     _materialColor = {1, 1, 1, mat.diffuse.A()};
+    if (_shapeFlags & IsShadow)
+        return; // Object::DrawShadow sets the unlit opacity before BeginMeshTL.
     vk::ShapeMaterial(_lighting, mat, *GScene->MainLight(),
                       _sunEnabled && !render::Has(spec.material, render::Material::DisableSun));
     _lighting.localLights = {};
@@ -65,7 +79,9 @@ void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& s
         }
     }
     _sectionSampler = vk::ShapeSampler(spec);
-    vk::ShapeFog(_lighting, GScene->GetFogMinRange(), GScene->GetFogMaxRange(), _fogColor,
+    _sectionShadow = ((_shapeFlags | render::MergeLegacy(spec)) & IsShadow) != 0;
+    vk::ShapeFog(_lighting, _sectionShadow ? GScene->GetShadowFogMinRange() : GScene->GetFogMinRange(),
+                 _sectionShadow ? GScene->GetShadowFogMaxRange() : GScene->GetFogMaxRange(), _fogColor,
                  _shapeFog && !render::Has(spec.routing, render::Routing::FogDisabled | render::Routing::NoDropdown));
     _lighting.eyeCoef = _vk.EyeCoef();
     auto alpha = AlphaStats::Opaque;
@@ -84,6 +100,12 @@ void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& s
     _sectionAlphaCutoff = state.cutoff;
     _sectionDepthTest = state.depthTest;
     _sectionDepthWrite = state.depthWrite;
+    if (_sectionShadow)
+    {
+        _sectionAlphaCutoff = std::max(1, (GetShadowFactor() * 7) >> 4) / 255.f;
+        _sectionDepthTest = true;
+        _sectionDepthWrite = false;
+    }
 }
 
 void EngineVK::PrepareMeshTL(const LightList& lights, const Matrix4& modelToWorld, const render::LegacySpec& spec)
@@ -149,7 +171,7 @@ void EngineVK::DrawSectionTL(const Shape& shape, int begin, int end)
         return; // Minimized drawable: no acquired image, but unsupported states above still fail.
     _vk.DrawMesh(buffer->Buffers(), range.begin, range.end - range.begin, sizeof(VertexIndex) == 2, _shapeMVP, color,
                  _sectionTexture, _sectionSampler, _sectionAlphaCutoff, _sectionBlend, false, _sectionDepthTest, nullptr,
-                 _sectionDetail, _secondaryMode, _bumpLight, 0, 0, _sectionDepthWrite, &_lighting);
+                 _sectionDetail, _secondaryMode, _bumpLight, 0, 0, _sectionDepthWrite, &_lighting, _sectionShadow);
 }
 
 void EngineVK::EndMeshTL(const Shape& shape)

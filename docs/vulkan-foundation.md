@@ -701,3 +701,18 @@ Ten focused cases / 88 assertions and 89 policy guards pass. RTX Take the Car
 foliage, buildings, weapon/HUD and model-smoke Jeep/building were inspected;
 a matching GL33 mission view was captured. Timed and normal-close Vulkan runs
 report zero validation errors/warnings. Evidence: build/shadow-live/m1-*.
+
+Projected shadows now consume Scene/Object's existing projected Shapes. A
+D32S8 (D24S8 fallback) attachment and per-pass stencil clear retain receiver
+depth; EQUAL-zero/INCREMENT exclusion and ZERO/ONE_MINUS_SRC_ALPHA blending
+darken each pixel once across all casters. A dedicated late-test fragment shader
+keeps texture holes out of the stencil mask. Native and software draws use
+engine opacity and shadow-distance inputs, without ordinary lighting/RGB fog.
+The normal Scene capability is enabled. Invalid pass nesting/draw state fails.
+
+Stock B02HMMWV at 13:00 visibly casts its projected vehicle shadow on the road
+and roadside while driving in third person; nearby scenery/vehicle depth remains
+intact. Take the Car's ordinary scene also runs. RTX core/sync validation through
+normal close: 5244/4811 submissions, zero errors/warnings. Software shadow draws
+were measured; cached native shadow coverage is checked in the next milestone.
+Build, ten focused Shape cases and 92 policy guards pass. Evidence: m2-*.

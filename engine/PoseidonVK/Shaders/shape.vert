@@ -7,15 +7,22 @@ layout(location = 2) in vec3 normal;
 layout(location = 0) out vec2 texCoord;
 layout(location = 1) out vec4 vertexColor;
 layout(location = 2) out float fogVisibility;
-layout(push_constant) uniform ShapeDraw { mat4 mvp; vec4 color; float alphaCutoff; float invGamma; } draw;
+layout(push_constant) uniform ShapeDraw { mat4 mvp; vec4 color; float alphaCutoff; float invGamma; float detailEnabled; float shadow; } draw;
 void main() {
     gl_Position = draw.mvp * vec4(position, 1.0);
     texCoord = uv;
+    vec3 relativeWorld = (lighting.world * vec4(position, 1.0)).xyz;
+    float distance = length(relativeWorld);
+    fogVisibility = lighting.fogParams.z > 0.5 ?
+        clamp(1.0 - (distance - lighting.fogParams.x) * lighting.fogParams.y, 0.0, 1.0) : 1.0;
+    if (draw.shadow > 0.5) {
+        vertexColor = vec4(1.0); // Material opacity and engine shadow-distance fade only.
+        return;
+    }
     vec3 worldNormal = normalize(lighting.normalMatrix * normal);
     float NdotL = max(0.0, dot(worldNormal, -lighting.sunDirection.xyz));
     vec3 color = lighting.emissive.rgb +
         (lighting.ambient.rgb + lighting.diffuse.rgb * NdotL) * lighting.ambient.w;
-    vec3 relativeWorld = (lighting.world * vec4(position, 1.0)).xyz;
     // Engine-selected point/reflector lights, matching GL33's falloff/cone.
     for (int i = 0; i < int(lighting.localCount.x); ++i) {
         ShapeLocalLight light = lighting.localLights[i];
@@ -38,7 +45,4 @@ void main() {
             light.ambient.rgb * attenuation;
     }
     vertexColor = vec4(clamp(color, 0.0, 1.0), 1.0);
-    float distance = length(relativeWorld); // World is already camera-relative.
-    fogVisibility = lighting.fogParams.z > 0.5 ?
-        clamp(1.0 - (distance - lighting.fogParams.x) * lighting.fogParams.y, 0.0, 1.0) : 1.0;
 }

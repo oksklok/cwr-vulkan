@@ -29,15 +29,21 @@ inline ShapeAlphaState ShapeAlpha(const render::LegacySpec& spec, AlphaStats::Ki
 }
 inline bool SupportedShapeSpec(const render::LegacySpec& spec)
 {
-    const auto backend = render::Backend::IsAlpha | render::Backend::IsTransparent | render::Backend::PointSampling |
+    auto backend = render::Backend::IsAlpha | render::Backend::IsTransparent | render::Backend::PointSampling |
                          render::Backend::NoClamp | render::Backend::ClampU | render::Backend::ClampV |
                          render::Backend::DetailTexture | render::Backend::SpecularTexture |
                          render::Backend::ZBiasStep | render::Backend::ZBiasMaskHi |
-                         render::Backend::NoZBuf | render::Backend::NoZWrite;
+                         render::Backend::NoZBuf | render::Backend::NoZWrite |
+                         render::Backend::IsShadow;
     // IsAnimated denotes engine-selected texture frames, not dynamic vertices.
     const auto material = render::Material::DisableSun | render::Material::BestMipmap | render::Material::IsAnimated;
-    const auto routing = render::Routing::IsColored | render::Routing::IsAlphaOrdered | render::Routing::NoShadow |
+    auto routing = render::Routing::IsColored | render::Routing::IsAlphaOrdered | render::Routing::NoShadow |
                          render::Routing::ShadowDisabled | render::Routing::FogDisabled | render::Routing::NoDropdown;
+    if (render::Has(spec.backend, render::Backend::IsShadow))
+    {
+        routing = routing | render::Routing::OnSurface | render::Routing::IsOnSurface;
+        backend = backend | render::Backend::IsAlphaFog;
+    }
     return (spec.backend & ~backend) == render::Backend::None &&
            (spec.material & ~material) == render::Material::None && (spec.routing & ~routing) == render::Routing::None;
 }
