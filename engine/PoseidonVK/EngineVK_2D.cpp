@@ -164,22 +164,13 @@ void EngineVK::SubmitScreen(const MipInfo& mip, const Vertex2DAbs* vertices, int
     const int bottom = std::clamp(int(std::ceil(clip.y + clip.h)), y, _height);
     if (right == x || bottom == y)
         return;
-    const VkRect2D scissor{{x, y}, {unsigned(right - x), unsigned(bottom - y)}};
-    std::vector<vk::ScreenVertex> packed;
-    std::vector<uint32_t> indices;
+    const vk::ScreenState::Clip scissor{x, y, unsigned(right - x), unsigned(bottom - y)};
+    _screenVertices.clear();
     for (int i = 0; i < n; ++i)
     {
-        packed.push_back(vk::ScreenGeometry(vertices[i], _width, _height));
-        packed.back().fog = fog;
+        _screenVertices.push_back(vk::ScreenGeometry(vertices[i], _width, _height));
+        _screenVertices.back().fog = fog;
     }
-    for (int i = 2; i < n; ++i)
-    {
-        indices.push_back(0);
-        indices.push_back(i - 1);
-        indices.push_back(i);
-    }
-    auto buffer = _vk.UploadTransientMesh(packed.data(), packed.size() * sizeof(packed[0]), indices.data(),
-                                          indices.size() * sizeof(indices[0]));
     std::shared_ptr<vk::TextureImage> image;
     auto alpha = AlphaStats::Opaque;
     if (mip._texture)
@@ -195,9 +186,9 @@ void EngineVK::SubmitScreen(const MipInfo& mip, const Vertex2DAbs* vertices, int
     // Alpha-fog/transparent effects must fade, not disappear at the opaque
     // cutout threshold. GL33 rejects only near-zero alpha on blended draws.
     const float cutoff = blend ? 1.f / 255 : alpha == AlphaStats::Cutout ? 0.5f : 0;
-    _vk.DrawMesh(buffer.buffers, 0, indices.size(), false, {}, {1, 1, 1, 1}, image,
-                 vk::ShapeSampler(render::SplitLegacy(flags)), cutoff, blend, true, depth, &scissor, {}, 1, {0, -1, 0},
-                 buffer.vertexOffset, buffer.indexOffset, (flags & NoZWrite) == 0, nullptr, false, (flags & IsLight) != 0);
+    _vk.QueueScreenPolygon(_screenVertices,
+                           {image, vk::ShapeSampler(render::SplitLegacy(flags)), cutoff, blend, depth,
+                            (flags & NoZWrite) == 0, (flags & IsLight) != 0, scissor});
 }
 void EngineVK::DrawPoly(const MipInfo& mip, const Vertex2DPixel* vertices, int n, const Rect2DPixel& clip, int flags)
 {

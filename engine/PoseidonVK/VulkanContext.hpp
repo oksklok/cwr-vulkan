@@ -3,6 +3,7 @@
 #include <PoseidonVK/SwapchainPolicy.hpp>
 #include <PoseidonVK/BufferVK.hpp>
 #include <PoseidonVK/ShapeLightingData.hpp>
+#include <PoseidonVK/ScreenBatchVK.hpp>
 #include <array>
 #include <atomic>
 #include <string>
@@ -73,6 +74,8 @@ class VulkanContext
     std::shared_ptr<MeshBuffers> UploadMesh(const void* vertices, size_t vertexBytes, const void* indices,
                                             size_t indexBytes);
     MeshSlice UploadTransientMesh(const void* vertices, size_t vertexBytes, const void* indices, size_t indexBytes);
+    void QueueScreenPolygon(std::span<const ScreenVertex> polygon, const ScreenState& state);
+    void FlushScreenBatch();
     std::shared_ptr<TextureImage> UploadTexture(uint32_t width, uint32_t height, const void* rgba);
     std::shared_ptr<TextureImage> UploadTexture(std::span<const TextureMip> mips);
     void DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t firstIndex, uint32_t count, bool index16,
@@ -88,16 +91,20 @@ class VulkanContext
     VkExtent2D Extent() const { return _extent; }
     const std::string& DeviceName() const { return _deviceName; }
     unsigned ValidationErrors() const { return _validationErrors.load(); }
-    void SetGamma(float gamma) { _gamma = gamma; }
+    void SetGamma(float gamma) { if (_gamma != gamma) FlushScreenBatch(); _gamma = gamma; }
     float Gamma() const { return _gamma; }
-    void SetFogColor(const std::array<float, 4>& color) { _fogColor = color; }
+    void SetFogColor(const std::array<float, 4>& color) { if (_fogColor != color) FlushScreenBatch(); _fogColor = color; }
     void SetNightEye(float night)
     {
-        _eyeCoef = night > 0.01f ? std::array<float, 4>{0.2f, 0.9f, 0.4f, 1 - night} : std::array<float, 4>{0, 0, 0, 1};
+        const auto eye = night > 0.01f ? std::array<float, 4>{0.2f, 0.9f, 0.4f, 1 - night} : std::array<float, 4>{0, 0, 0, 1};
+        if (_eyeCoef != eye) FlushScreenBatch();
+        _eyeCoef = eye;
     }
     const std::array<float, 4>& EyeCoef() const { return _eyeCoef; }
 
   private:
+    ScreenBatch _screenBatch;
+    bool _batchScreens = true; // Process-local A/B profiling control; normal operation batches.
     // Opt-in bounded measurement, not a scheduler or frame-time governor.
     struct Profile
     {
@@ -106,6 +113,7 @@ class VulkanContext
         double recordMs = 0, geometryMs = 0, textureMs = 0, fenceMs = 0, retireMs = 0, acquireMs = 0, presentMs = 0;
         uint64_t transient = 0, allocations = 0, textureUploads = 0, litDraws = 0, localLights = 0;
         uint64_t nativeShadows = 0, softwareShadows = 0, shadowTriangles = 0;
+        uint64_t screenPolygons = 0, screenBatches = 0, screenDraws = 0;
         std::array<float, 2> fogRange{};
         std::vector<double> times;
     } _profile;

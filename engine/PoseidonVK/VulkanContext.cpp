@@ -85,6 +85,8 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanContext::ValidationMessage(VkDebugUtilsMess
 void VulkanContext::CreateInstance(const char* const* extensions, uint32_t count, bool validation)
 {
     _profile.enabled = std::getenv("CWR_VK_PROFILE") != nullptr;
+    const char* batching = std::getenv("CWR_VK_SCREEN_BATCH");
+    _batchScreens = !batching || std::strcmp(batching, "0") != 0;
     if (_instance)
         throw std::logic_error("Vulkan: instance already created");
     if (!extensions || !count)
@@ -617,6 +619,7 @@ bool VulkanContext::BeginFrame(uint32_t width, uint32_t height)
 
 void VulkanContext::Clear(float r, float g, float b, float a)
 {
+    FlushScreenBatch();
     if (!_frameOpen)
         return;
     _clearColor = {r, g, b, a};
@@ -632,6 +635,7 @@ void VulkanContext::Clear(float r, float g, float b, float a)
 
 void VulkanContext::ClearDepth()
 {
+    FlushScreenBatch();
     if (!_frameOpen)
         return;
     VkClearAttachment attachment{};
@@ -645,6 +649,7 @@ void VulkanContext::ClearDepth()
 
 void VulkanContext::BeginShadowPass()
 {
+    FlushScreenBatch();
     if (_shadowPass)
         throw std::logic_error("Vulkan projected shadow pass is already active");
     _shadowPass = true;
@@ -662,6 +667,7 @@ void VulkanContext::BeginShadowPass()
 
 void VulkanContext::EndShadowPass()
 {
+    FlushScreenBatch();
     if (!_shadowPass)
         throw std::logic_error("Vulkan projected shadow pass was not begun");
     _shadowPass = false;
@@ -669,6 +675,7 @@ void VulkanContext::EndShadowPass()
 
 void VulkanContext::EndFrame()
 {
+    FlushScreenBatch();
     if (_shadowPass)
         throw std::logic_error("Vulkan frame ended before EndShadowPass");
     if (!_frameOpen)
@@ -736,14 +743,17 @@ void VulkanContext::ReportProfile()
         "transient/frame=%.1f allocations/frame=%.1f geometry_upload_ms/frame=%.3f "
         "texture_uploads=%llu texture_upload_ms=%.3f fence_ms/frame=%.3f retire_ms/frame=%.3f acquire_ms/frame=%.3f "
         "present_ms/frame=%.3f lit_draws/frame=%.1f local_lights/frame=%.1f fog_range=%.1f..%.1f "
-        "shadow_native/frame=%.1f shadow_software/frame=%.1f shadow_triangles/frame=%.1f\n",
+        "shadow_native/frame=%.1f shadow_software/frame=%.1f shadow_triangles/frame=%.1f "
+        "screen_polygons/frame=%.1f screen_draws/frame=%.1f screen_batches/frame=%.1f polygons/batch=%.2f\n",
         times.size(), frames * 1000 / total, total / frames, times[size_t((times.size() - 1) * 0.95)],
         _profile.recordMs / frames, _profile.transient / frames, _profile.allocations / frames,
         _profile.geometryMs / frames, static_cast<unsigned long long>(_profile.textureUploads), _profile.textureMs,
         _profile.fenceMs / frames, _profile.retireMs / frames, _profile.acquireMs / frames,
         _profile.presentMs / frames, _profile.litDraws / frames, _profile.localLights / frames,
         _profile.fogRange[0], _profile.fogRange[1], _profile.nativeShadows / frames,
-        _profile.softwareShadows / frames, _profile.shadowTriangles / frames);
+        _profile.softwareShadows / frames, _profile.shadowTriangles / frames,
+        _profile.screenPolygons / frames, _profile.screenDraws / frames, _profile.screenBatches / frames,
+        _profile.screenBatches ? double(_profile.screenPolygons) / _profile.screenBatches : 0);
     const double last = _profile.lastEnd;
     _profile = {};
     _profile.enabled = true;
@@ -758,6 +768,8 @@ void VulkanContext::WaitIdle()
 
 unsigned VulkanContext::Shutdown() noexcept
 {
+    // Normal closure ends the frame first; failed recording discards pending CPU geometry.
+    _screenBatch.Clear();
     const bool hadInstance = _instance != VK_NULL_HANDLE;
     if (_device)
     {

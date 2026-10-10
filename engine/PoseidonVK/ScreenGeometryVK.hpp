@@ -1,4 +1,5 @@
 #pragma once
+#include <PoseidonVK/ScreenBatchVK.hpp>
 #include <Poseidon/Graphics/Core/Engine.hpp>
 #include <cmath>
 #include <stdexcept>
@@ -6,11 +7,6 @@
 namespace Poseidon::vk
 {
 // Preserve engine reciprocal-W, UV and packed ARGB colors.
-struct ScreenVertex
-{
-    float position[4], uv[2], color[4];
-    float fog = 1;
-};
 inline ScreenVertex ScreenGeometry(const Vertex2DAbs& vertex, int width, int height)
 {
     if (width <= 0 || height <= 0 || !std::isfinite(vertex.w) || vertex.w <= 0)

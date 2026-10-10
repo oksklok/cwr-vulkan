@@ -787,3 +787,25 @@ retain their existing independent alpha policy. Both build configurations and
 11 focused Shape cases (131 assertions) pass, plus 92 driver-free policy guards.
 RTX Infantry gameplay, map open/close, resize and minimize/restore were inspected
 in `build/shadow-live/map-m1-baseline`. This is still the unbatched renderer.
+
+Ordered screen batching now retains one consecutive run of compatible polygons
+in CPU vectors, fan-triangulates with 32-bit indices, and uploads once through
+the existing frame-fenced transient pages. Image version/sampler, cutoff,
+blend/additive mode, independent depth state and scissor must match. Vertex
+reciprocal-W, UV, color and fog remain untouched. Gamma, fog color and night-eye
+changes flush before mutation; direct draws, diagnostic draws, shadow boundaries,
+clears, explicit FlushQueues and frame end also flush. Runs are bounded at 65,536
+vertices/196,608 indices; an oversized individual polygon flushes immediately.
+Dynamic textures allocate new immutable image versions, with queued and recorded
+draws retaining their original version. Native P3D and software shadow geometry
+are not batched or reordered.
+
+Both builds, 13 focused cases/156 assertions and 92 policy guards pass. RTX
+Infantry map/gameplay, map close, resize/restore and normal close were visually
+checked (`build/shadow-live/map-m2-batched`): 2,667 submissions, zero core/sync
+validation errors/warnings through teardown. Initial map observations reduce
+roughly 11,800 polygons to about 1,030 screen draws; controlled A/B measurements
+follow below. `CWR_VK_SCREEN_BATCH=0` disables batching for process-local A/B
+profiling; the default is enabled. CWR_VK_PROFILE now distinguishes queued 2D
+polygons, emitted batches, all actual screen draws (including software geometry),
+and polygons per batch. Existing transient counts still count geometry uploads.

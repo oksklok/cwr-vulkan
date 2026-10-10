@@ -153,6 +153,8 @@ class EngineVK final : public Engine
     MipInfo _softwareMip;
     int _softwareFlags = 0;
     std::vector<vk::ScreenVertex> _softwareVertices;
+    std::vector<vk::ScreenVertex> _screenVertices;
+    void FlushQueues() override { _vk.FlushScreenBatch(); }
     void SubmitSoftware(const std::vector<uint32_t>& indices);
     void SubmitScreen(const MipInfo&, const Vertex2DAbs*, int, const Rect2DAbs&, int, float fog = 1);
     void StopAfterFailure(const std::exception& error);

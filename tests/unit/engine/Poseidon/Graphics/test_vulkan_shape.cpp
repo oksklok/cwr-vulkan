@@ -8,6 +8,64 @@
 
 using namespace Poseidon;
 
+TEST_CASE("Vulkan consecutive screen batches preserve fans attributes and 32-bit indices", "[Graphics][vulkan-shape]")
+{
+    vk::ScreenBatch batch;
+    vk::ScreenVertex quad[4]{};
+    for (int i = 0; i < 4; ++i)
+    {
+        quad[i].position[3] = float(i + 1);
+        quad[i].uv[0] = float(i) / 4;
+        quad[i].color[3] = float(i) / 8;
+        quad[i].fog = float(i) / 16;
+    }
+    batch.Append(quad);
+    batch.Append(std::span(quad, 3));
+    REQUIRE(batch.indices == std::vector<uint32_t>{0, 1, 2, 0, 2, 3, 4, 5, 6});
+    REQUIRE(batch.vertices[5].position[3] == 2);
+    REQUIRE(batch.vertices[5].uv[0] == 0.25f);
+    REQUIRE(batch.vertices[5].color[3] == 0.125f);
+    REQUIRE(batch.vertices[5].fog == 0.0625f);
+    REQUIRE_FALSE(batch.NeedsFlush(batch.state, 4));
+    REQUIRE(batch.NeedsFlush(batch.state, vk::ScreenBatch::MaxVertices));
+    batch.Clear();
+    // An oversized individual fan is legal and must not wrap at 16 bits.
+    std::vector<vk::ScreenVertex> large(65538);
+    batch.Append(large);
+    REQUIRE(batch.indices.back() == 65537);
+    REQUIRE(batch.NeedsFlush(batch.state, 3));
+}
+
+TEST_CASE("Vulkan screen batches split on state changes and hold immutable texture versions", "[Graphics][vulkan-shape]")
+{
+    vk::ScreenBatch batch;
+    auto version = std::make_shared<int>(1);
+    std::weak_ptr<int> lifetime = version;
+    batch.state.image = std::shared_ptr<vk::TextureImage>(version, reinterpret_cast<vk::TextureImage*>(version.get()));
+    version.reset();
+    vk::ScreenVertex triangle[3]{};
+    batch.Append(triangle);
+    REQUIRE_FALSE(lifetime.expired());
+    auto next = batch.state;
+    REQUIRE_FALSE(batch.NeedsFlush(next, 3));
+    next.image.reset(); REQUIRE(batch.NeedsFlush(next, 3));
+    next = batch.state; ++next.sampler; REQUIRE(batch.NeedsFlush(next, 3));
+    next = batch.state; next.cutoff = 0.5f; REQUIRE(batch.NeedsFlush(next, 3));
+    next = batch.state; next.blend = !next.blend; REQUIRE(batch.NeedsFlush(next, 3));
+    next = batch.state; next.additive = !next.additive; REQUIRE(batch.NeedsFlush(next, 3));
+    next = batch.state; next.depthTest = !next.depthTest; REQUIRE(batch.NeedsFlush(next, 3));
+    next = batch.state; next.depthWrite = !next.depthWrite; REQUIRE(batch.NeedsFlush(next, 3));
+    next = batch.state; ++next.clip.x; REQUIRE(batch.NeedsFlush(next, 3));
+    next = batch.state; ++next.clip.y; REQUIRE(batch.NeedsFlush(next, 3));
+    next = batch.state; ++next.clip.width; REQUIRE(batch.NeedsFlush(next, 3));
+    next = batch.state; ++next.clip.height; REQUIRE(batch.NeedsFlush(next, 3));
+    next.image.reset();
+    batch.Clear();
+    REQUIRE(lifetime.expired());
+    REQUIRE(batch.indices.empty());
+    REQUIRE(batch.vertices.empty());
+}
+
 TEST_CASE("Vulkan software explicit cutouts override decoded alpha but retain fades", "[Graphics][vulkan-shape]")
 {
     for (auto texture : {AlphaStats::Opaque, AlphaStats::Cutout, AlphaStats::Blend})

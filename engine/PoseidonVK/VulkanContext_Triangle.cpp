@@ -118,6 +118,7 @@ void VulkanContext::CreateTrianglePipeline()
 
 void VulkanContext::DrawDiagnosticTriangle()
 {
+    FlushScreenBatch();
     if (!_frameOpen)
         throw std::logic_error("Vulkan triangle: indexed draw requires an open frame");
     if (!_triangleVertices.buffer)

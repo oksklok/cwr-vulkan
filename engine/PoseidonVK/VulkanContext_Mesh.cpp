@@ -106,6 +106,40 @@ MeshSlice VulkanContext::UploadTransientMesh(const void* vertices, size_t vertex
     }
 }
 
+void VulkanContext::QueueScreenPolygon(std::span<const ScreenVertex> polygon, const ScreenState& state)
+{
+    if (!_frameOpen || _shadowPass || polygon.size() < 3 || polygon.size() > UINT32_MAX / 3)
+        throw std::invalid_argument("Vulkan screen polygon requires a non-shadow frame and valid vertex count");
+    if (_screenBatch.NeedsFlush(state, polygon.size()))
+        FlushScreenBatch();
+    if (_screenBatch.indices.empty())
+        _screenBatch.state = state;
+    _screenBatch.Append(polygon);
+    if (_profile.enabled)
+        ++_profile.screenPolygons;
+    // Oversized individual polygons remain valid, but cannot grow the run further.
+    if (!_batchScreens || _screenBatch.vertices.size() >= ScreenBatch::MaxVertices || _screenBatch.indices.size() >= ScreenBatch::MaxIndices)
+        FlushScreenBatch();
+}
+
+void VulkanContext::FlushScreenBatch()
+{
+    if (_screenBatch.indices.empty())
+        return;
+    const auto state = _screenBatch.state;
+    const auto count = uint32_t(_screenBatch.indices.size());
+    auto mesh = UploadTransientMesh(_screenBatch.vertices.data(), _screenBatch.vertices.size() * sizeof(ScreenVertex),
+                                    _screenBatch.indices.data(), count * sizeof(uint32_t));
+    // Clear before entering the common draw path, whose ordering barrier calls us.
+    _screenBatch.Clear();
+    if (_profile.enabled)
+        ++_profile.screenBatches;
+    const VkRect2D clip{{state.clip.x, state.clip.y}, {state.clip.width, state.clip.height}};
+    DrawMesh(mesh.buffers, 0, count, false, {}, {1, 1, 1, 1}, state.image, state.sampler, state.cutoff,
+             state.blend, true, state.depthTest, &clip, {}, 1, {0, -1, 0}, mesh.vertexOffset,
+             mesh.indexOffset, state.depthWrite, nullptr, false, state.additive);
+}
+
 void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool depthTest, bool depthWrite, bool shadow,
                                         bool additive)
 {
@@ -253,6 +287,7 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
                              VkDeviceSize indexOffset, bool depthWrite, const ShapeLighting* lighting, bool shadow,
                              bool additive)
 {
+    FlushScreenBatch();
     if (additive && (!screen || shadow || !blend))
         throw std::logic_error("Vulkan additive drawing requires a blended non-shadow screen mesh");
     if (shadow != _shadowPass)
@@ -335,6 +370,8 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     vkCmdPushConstants(frame.command, _shapeLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                        sizeof(constants), constants.data());
     vkCmdDrawIndexed(frame.command, count, 1, firstIndex, 0, 0);
+    if (_profile.enabled && screen)
+        ++_profile.screenDraws;
     if (!_loggedShape)
     {
         std::fprintf(stderr, "Vulkan: first production %s draw: firstIndex=%u count=%u\n", screen ? "2D" : "Shape",
