@@ -1,5 +1,10 @@
 # Vulkan backend development
 
+Current status: Vulkan remains opt-in, with gameplay lighting/fog, projected
+shadows and ordered screen batching. The latest measured Infantry map result is
+6.55 -> 47.49 FPS with 91.25% fewer screen draws. The dated milestones below are
+historical; their earlier unsupported-feature lists are superseded by later work.
+
 Repository migration: `oksklok/cwr-vulkan` is an independent clone with its own
 `.git` directory and official `BohemiaInteractive/CWR` upstream. Its main starts
 at official 3.05 (`ffc6183`) and replays only the six Vulkan commits from the
@@ -849,3 +854,57 @@ recording about 1,000 state-separated runs, not allocations or upload bandwidth.
 No additional localized hotspot was established that warranted expanding this
 change. Redundant command/state binding within those ordered runs is a useful
 next profiling target; sorting transparent polygons remains out of scope.
+
+### Gameplay and final regression checks
+
+The existing isolated GOG data/profile setup was used with object and vehicle
+shadows enabled in copied profiles. Stock missions were loaded through the normal
+mission-test path; no smoke geometry replaced gameplay. Evidence is under
+`build/shadow-live/map-m4-*`:
+
+- Infantry: movement/rotation, sights, firing (M16 ammo 30 -> 29), reload,
+  weapon switching, grenade throw (6 -> 5), visible explosion/dust/smoke,
+  map open/close, zoom-out and pan, pause/resume, third-person animated geometry,
+  resize/minimize/restore, and keyboard-selected Mission Abort. Normal shutdown:
+  11,746 submissions, zero core/synchronization validation errors/warnings.
+- Take the Car: movement/rotation, sights/fire/reload input, foliage and HUD,
+  map zoom/pan through town/road/forest areas, pause/resume, resize/restore and
+  normal close. 3,814 submissions, zero validation issues through destruction.
+- B02HMMWV: third-person driving (position change verified), exhaust/dust,
+  moving vehicle and scenery projected shadows, map zoom/pan, pause/resume,
+  resize/restore and normal close. 3,195 submissions, zero validation issues.
+
+Comparable stationary 800x600 gameplay samples with the same executable/profile
+and batching off/on showed no systematic 3D regression. Representative frame
+interval ranges were 11.65..18.08 -> 10.40..12.67 ms in Infantry and
+19.54..24.58 -> 13.61..13.88 ms in Take the Car. Corresponding recording intervals
+were 10.64..13.55 -> 7.47..9.39 ms and 12.46..15.75 -> 12.96..13.18 ms.
+AI, weather, radio overlays and window scheduling vary between live runs, so
+these ranges are regression observations, not deterministic whole-mission gains.
+Settled samples retained zero recurring transient allocations.
+
+Normal Vulkan menu/animated intro reached a 20-second timed shutdown (exit 0,
+1,989 submissions, zero validation issues). Default GL33-only menu/intro was
+visually inspected and timed out with exit 0. Texture/Shape, real-model and
+triangle diagnostics were visually checked and timed out with exit 0, respectively
+1,833 / 1,771 / 1,841 submissions and zero validation errors/warnings. A further
+batching-off menu comparison retained the same small intro projection artifact;
+it also exited 0 with clean validation. Wide-map rectangular offshore contour
+lines were reproduced in GL33 and are not a batching regression.
+
+Final Vulkan-enabled and GL33-only builds pass. Focused Shape/batch/decoder tests:
+32 cases / 274 assertions ON, 31 / 269 OFF; all 92 driver-free policy guards pass.
+The batching tests cover fan order/attributes, 32-bit indices, bounded runs,
+state splits and image-version lifetime. Live mixed UI/software/native/shadow
+frames, font updates and teardown showed no missing or unflushed geometry.
+All 7,606 stock-data/resource files retained their original count, lengths and
+timestamps; localization and GL33 rendering code were not edited. Audio mute and
+Caps Lock were restored to their initial states. These are bounded gameplay
+checks, not completed missions or exhaustive coverage of all map scales/proxies.
+
+Remaining limitations include pre-existing water/shoreline artifacts and material
+parity gaps. Map performance now depends mainly on the remaining ordered draw
+runs and CPU command recording; GPU execution is not timestamp-profiled. The
+single next performance milestone is measuring and eliminating redundant Vulkan
+pipeline/descriptor/viewport/scissor bindings within those runs, while retaining
+exact draw order and invalidating cached state at command-buffer boundaries.
