@@ -746,3 +746,34 @@ playthroughs. One malformed probe aborted via the test harness; the corrected
 run closed normally with 2809 frames and zero validation errors/warnings.
 Evidence: m4-conditions, m4-reference, m4-overlap. Road filtering and foliage
 edge differences versus GL33 remain outside this shadow change.
+
+Final RTX 4060 Ti validation: normal --render vk startup, animated menu world,
+menu-selected Heavy Metal and walking near its M1A1/building/soldier shadows
+ran for six minutes (25888 submissions). Infantry at stock dawn ran 200 seconds
+(11545): movement, camera rotation, sights, firing (ammo decreased), reload,
+third-person animated shadow, weapon selection, grenade explosion/fading smoke,
+map, pause/resume, resize and minimize/restore were visually checked. Stock
+Shadow Killer at 03:00 exercised movement/sights/firing with zero projected
+shadow submissions; keyboard-selected Mission Abort exited the test-mission
+run normally (4771). All these runs reported zero core/synchronization validation
+errors/warnings through teardown. HMMWV driving was checked earlier. These are
+bounded gameplay checks, not completed missions or full gameplay certification.
+
+Matched 800x600 HMMWV town profiles, same build/stock mission/viewpoint with
+isolated object+vehicle shadow settings off/on: the last five settled two-second
+windows averaged 15.53/17.31 ms (64.4/57.8 FPS), CPU recording 11.25/12.33 ms,
+and window p95 12.13/13.12 ms. Shadows-on submitted 114 cached draws/frame;
+both had zero transient allocations and texture uploads in those windows.
+Fence time was 0.135/0.161 ms. These are short live samples, not GPU timings or
+a deterministic benchmark. No allocator/scheduler changes were warranted.
+
+Both build configurations pass; Vulkan has 30 focused decoder/Shape cases
+(357 assertions) plus 92 policy guards, GL33-only has 19 decoder cases
+(214 assertions). The GL33-only default menu was captured and closed normally.
+Stock data/localization/resources were not edited. Evidence: build/shadow-live/m5-*.
+Remaining limitations: legacy terrain-fitted shadows, not general object-to-object
+shadow mapping; no exhaustive proxy/LOD coverage. The map remains expensive
+(about 5 FPS / 11000 screen submissions in Infantry), and distant white water/
+shoreline patches were observed but not investigated in this shadow task.
+The next high-value performance step is reducing the map's repeated screen draw
+overhead, independently of projected shadows.
