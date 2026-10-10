@@ -1102,3 +1102,67 @@ fix. Full native material-specular parity and the unused explicit IsWater family
 are not claimed. No additional shader or global sampler change was justified by
 these comparisons. Both comparison processes closed normally (Vulkan 3,127
 submissions, zero core/synchronization validation errors or warnings).
+
+### Water performance and final gameplay verification
+
+Matched profiling used the stock Infantry bay at noon, the same camera and
+shadow-enabled profile above, 800x600 on the RTX 4060 Ti. The saved 0b80145
+executable was compared with the fixed executable. Each result aggregates the
+last five complete two-second windows after settling (frame-weighted times,
+FPS from total frames / total elapsed time). No build ran during sampling.
+Evidence: `build/shadow-live/water-perf-{before,after}-{on,off}` and the reversed
+order `*-off-repeat` pair.
+
+| Validation / sample | Baseline FPS / frame ms | Fixed FPS / frame ms | Command recording ms, before -> after |
+| --- | --- | --- | --- |
+| On | 158.16 / 6.323 | 158.13 / 6.324 | 2.232 -> 2.223 |
+| Off, first pair | 121.18 / 8.252 | 107.13 / 9.334 | 0.652 -> 0.603 |
+| Off, reverse-order repeat | 158.42 / 6.312 | 158.28 / 6.318 | 0.605 -> 0.647 |
+
+The first validation-off pair contains intermittent wall-clock stalls in BOTH
+binaries outside the measured command interval. The repeat does not reproduce
+the apparent FPS loss. Legacy `record_ms` (including presentation/waits) stayed
+about 6.01 ms off and 6.03 ms on; settled geometry upload was 0.006-0.008 ms/frame,
+with zero transient allocations and no texture uploads in the sampled windows.
+Both binaries recorded identical sampled draw/state counts (189 lit draws,
+109 screen draws, 14 pipeline / 218 texture-set binds per frame). This is a
+visual correction, not a measured performance improvement; the stable repeat
+shows no meaningful regression. GPU execution was not independently timestamped.
+
+Bounded real-game checks, with core and synchronization validation enabled:
+
+- Infantry: moved about 4 m, rotated toward/away from shore, aimed/fired/reloaded,
+  threw a grenade (6 -> 5 with visible explosion smoke), opened/zoomed/closed the
+  map, checked HUD/third-person soldier/projected shadows, paused/resumed, resized
+  to 960x640 and minimized/restored. Running water was inspected in two captures
+  ten seconds apart; animation/shore movement continued without new white patches.
+  Mission Abort exited 0: 12,694 submissions, zero validation errors/warnings.
+- Take the Car: movement/rotation, aim/fire (HUD 30 -> 29), foliage and building
+  textures, translucent radio/tutorial HUD, map open/close, pause/resume and
+  900x650 resize/minimize/restore. Normal close exited 0: 3,287 submissions, zero
+  validation errors/warnings.
+- HMMWV: cockpit and third-person driving (about 20 m), exhaust/dust, vehicle
+  and object shadows, map open/close. A temporary runtime placement at
+  [8110,5160,0] facing west added daylight coastal driving/water inspection;
+  no mission file was edited and this was not mission completion. Water,
+  animated flag and vehicle shadow remained intact across pause/resume and
+  900x650 resize/minimize/restore. Normal close exited 0: 7,792 submissions,
+  zero validation errors/warnings.
+
+Evidence is under `build/shadow-live/water-game-{infantry,takecar,hmmwv}`.
+Final Vulkan menu/animated intro reached timed exit 0 (2,482 submissions, zero
+validation issues). Default GL33 in the Vulkan-enabled executable and the
+GL33-only executable both rendered their menus/intro and reached timed exit 0.
+Both final builds pass; focused tests pass 33 cases / 285 assertions ON and
+32 / 280 OFF, plus 114 driver-free guards (their intentional mocked teardown
+error is not a live validation error). The stale EOS overlay manifest loader
+message remains an unrelated environment issue. All 7,606 protected stock and
+resource files retain their initial count, length and modification timestamp;
+no localization or GL33 rendering implementation changed.
+
+Next highest-value visual-parity work: investigate distant/oblique texture
+filtering and mip/LOD parity with GL33. Its linear samplers enable up to 16x
+anisotropy whereas Vulkan currently uses plain trilinear sampling; the observed
+distant-water smoothing is a concrete comparison target, not grounds for a
+speculative global sampler change in this patch. Full material-specular and
+explicit IsWater support remain separate limitations.
