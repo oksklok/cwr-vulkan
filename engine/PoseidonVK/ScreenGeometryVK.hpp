@@ -6,11 +6,14 @@
 
 namespace Poseidon::vk
 {
-// Preserve engine reciprocal-W, UV and packed ARGB colors.
+// Preserve engine reciprocal-W, UV and packed ARGB colors. A world-space
+// ribbon (e.g. a tracer passing the camera) can have an endpoint behind the
+// eye. Keep its negative W so homogeneous GPU clipping handles the crossing;
+// rejecting it crashes combat, and abs/clamping would move it in front.
 inline ScreenVertex ScreenGeometry(const Vertex2DAbs& vertex, int width, int height)
 {
-    if (width <= 0 || height <= 0 || !std::isfinite(vertex.w) || vertex.w <= 0)
-        throw std::invalid_argument("Vulkan screen vertex requires an extent and positive reciprocal-W");
+    if (width <= 0 || height <= 0 || !std::isfinite(vertex.w) || vertex.w == 0)
+        throw std::invalid_argument("Vulkan screen vertex requires an extent and finite nonzero reciprocal-W");
     const float w = 1 / vertex.w;
     return {{(2 * vertex.x / width - 1) * w, (2 * vertex.y / height - 1) * w, vertex.z * w, w},
             {vertex.u, vertex.v},

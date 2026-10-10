@@ -6,6 +6,7 @@
 #include <PoseidonVK/ShapeLightingVK.hpp>
 #include <PoseidonVK/TextureInterpolationVK.hpp>
 #include <catch2/catch_approx.hpp>
+#include <limits>
 
 using namespace Poseidon;
 
@@ -300,8 +301,45 @@ TEST_CASE("Vulkan screen packing preserves pixels UV depth reciprocal W and ARGB
     REQUIRE(packed.fog == 1); // HUD and ordinary 2D draws never inherit world fog.
     vertex.w = 0;
     REQUIRE_THROWS_AS(vk::ScreenGeometry(vertex, 800, 600), std::invalid_argument);
+    vertex.w = -0.0f;
+    REQUIRE_THROWS_AS(vk::ScreenGeometry(vertex, 800, 600), std::invalid_argument);
+    vertex.w = std::numeric_limits<float>::infinity();
+    REQUIRE_THROWS_AS(vk::ScreenGeometry(vertex, 800, 600), std::invalid_argument);
+    vertex.w = std::numeric_limits<float>::quiet_NaN();
+    REQUIRE_THROWS_AS(vk::ScreenGeometry(vertex, 800, 600), std::invalid_argument);
     vertex.w = 1;
     REQUIRE_THROWS_AS(vk::ScreenGeometry(vertex, 0, 600), std::invalid_argument);
+}
+
+TEST_CASE("Vulkan screen tracers preserve endpoints behind the eye for homogeneous clipping", "[Graphics][vulkan-shape]")
+{
+    // Shadow Killer combat crash: a projected tracer crosses the eye plane.
+    // Rejecting (or taking abs of) the second reciprocal-W loses valid geometry.
+    Vertex2DAbs front, behind;
+    front.x = 663.113586f;
+    front.y = 564.258362f;
+    front.z = 0.979048311f;
+    front.w = 0.220856249f;
+    behind.x = 614.947754f;
+    behind.y = 640.798889f;
+    behind.z = 1.04036939f;
+    behind.w = -0.419688940f;
+    behind.u = 90.4345016f;
+    behind.v = 1;
+    const auto a = vk::ScreenGeometry(front, 960, 640);
+    const auto b = vk::ScreenGeometry(behind, 960, 640);
+    REQUIRE(a.position[3] > 0);
+    REQUIRE(b.position[3] == Catch::Approx(1 / behind.w));
+    REQUIRE(b.position[0] == Catch::Approx((2 * behind.x / 960 - 1) / behind.w));
+    REQUIRE(b.position[1] == Catch::Approx((2 * behind.y / 640 - 1) / behind.w));
+    REQUIRE(b.position[2] == Catch::Approx(behind.z / behind.w));
+    REQUIRE(b.uv[0] == behind.u);
+    REQUIRE(b.uv[1] == behind.v);
+    // The near-plane intersection has positive W and remains clip-able by GPU.
+    const float t = a.position[2] / (a.position[2] - b.position[2]);
+    REQUIRE(t > 0);
+    REQUIRE(t < 1);
+    REQUIRE(a.position[3] + t * (b.position[3] - a.position[3]) > 0);
 }
 
 TEST_CASE("Vulkan Shape extraction preserves polygon fans and section ranges", "[Graphics][vulkan-shape]")
