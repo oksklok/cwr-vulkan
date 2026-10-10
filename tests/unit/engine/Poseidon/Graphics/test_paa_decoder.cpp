@@ -8,12 +8,14 @@
 #include <filesystem>
 #include <chrono>
 #include <iterator>
+#include <memory>
 #include <vector>
 #include "test_fixtures.hpp"
 #include <Poseidon/Graphics/Textures/PAADecoder.hpp>
 #include <Poseidon/Graphics/Rendering/Font/Pactext.hpp>
 #include <array>
 #include <Poseidon/IO/Streams/QBStream.hpp>
+#include <Poseidon/IO/FileServer.hpp>
 #include <cstdlib>
 #include <stddef.h>
 #include <string>
@@ -241,14 +243,33 @@ TEST_CASE("PAADecoder: stock bank mip chains agree with the existing top decoder
     struct Banks
     {
         bool previous = GUseFileBanks;
-        ~Banks() { QIFStreamB::ClearBanks(); GUseFileBanks = previous; }
+        Ref<FileServer> previousServer = GFileServer;
+        ~Banks() { GFileServer = previousServer; QIFStreamB::ClearBanks(); GUseFileBanks = previous; }
     } banks;
+    class BankFileServer final : public FileServer
+    {
+      public:
+        void Open(QIFStream& stream, const char* name) override
+        {
+            QIFStreamB bank;
+            bank.AutoOpen(name);
+            stream = bank;
+        }
+        void Request(const char*, float, int, int) override {}
+        void CancelRequest(const char*, int, int) override {}
+        void Start() override {}
+        void Stop() override {}
+        void FlushBank(QFBank*) override {}
+    };
+    GFileServer = new BankFileServer;
     GUseFileBanks = true;
     const std::string directory = std::string(root) + "/dta/";
     GFileBanks.Load(directory.c_str(), "", "data", true);
     GFileBanks.Load(directory.c_str(), "", "abel", true);
     for (const char* name : {"data\\domek1_front_okna.pac", "data\\domek2_side.paa", "data\\detail_dx.paa", "abel\\rwn.paa", "abel\\s3.paa",
-                             "data\\more_anim.03.pac", "data\\specular_dx.paa", "data\\silnice.paa"})
+                             "data\\more_anim.03.pac", "data\\specular_dx.paa", "data\\silnice.paa",
+                             "data\\mrak_war_1.paa", "data\\mrak_war_3.paa", "data\\mrak_war_4.paa", "data\\mrak_war_5.paa",
+                             "data\\jablon_renovace.pac", "data\\jablon.pac", "data\\n_strom_13.pac", "data\\krovi6.pac"})
     {
         INFO(name);
         QIFStreamB source;
@@ -260,6 +281,20 @@ TEST_CASE("PAADecoder: stock bank mip chains agree with the existing top decoder
         REQUIRE(chain.size() > 1);
         const auto top = DecodePAABuffer(source.act(), source.rest(), paa);
         REQUIRE(chain[0].rgba == top.rgba);
+        const std::string textureName(name);
+        const bool cloud = textureName.find("mrak_war_") != std::string::npos;
+        const bool foliage = textureName.find("jablon") != std::string::npos ||
+                             textureName == "data\\n_strom_13.pac" || textureName == "data\\krovi6.pac";
+        if (cloud || foliage)
+        {
+            // Residency is not decoding: keep the authored base and lower mips,
+            // with translucent clouds distinct from binary-alpha foliage.
+            REQUIRE(top.width == 256);
+            REQUIRE(chain.size() >= 3);
+            REQUIRE(chain[2].width == 64);
+            REQUIRE(ClassifyAlpha(top.rgba.data(), size_t(top.width * top.height)).kind ==
+                    (cloud ? AlphaStats::Blend : AlphaStats::Cutout));
+        }
         if (uint8_t(source.act()[0]) == 0x80 && uint8_t(source.act()[1]) == 0x80)
             REQUIRE(ClassifyAlpha(top.rgba.data(), size_t(top.width * top.height)).kind == AlphaStats::Blend);
         for (size_t i = 1; i < chain.size(); ++i)
@@ -267,6 +302,41 @@ TEST_CASE("PAADecoder: stock bank mip chains agree with the existing top decoder
             REQUIRE(chain[i].width == std::max(1, chain[i - 1].width / 2));
             REQUIRE(chain[i].height == std::max(1, chain[i - 1].height / 2));
             REQUIRE(chain[i].rgba.size() == size_t(chain[i].width * chain[i].height * 4));
+        }
+        if (foliage)
+        {
+            // Compare every stored foliage alpha mask with the legacy source
+            // loader. RGB is deliberately excluded: GL33 uploads these DXT1
+            // textures compressed, not through the RGB555 conversion below.
+            PacLevelMem legacyMips[16];
+            auto* factory = SelectTextureSourceFactory(name);
+            REQUIRE(factory != nullptr);
+            std::unique_ptr<ITextureSource> legacy(factory->Create(name, legacyMips, 16));
+            REQUIRE(legacy != nullptr);
+            REQUIRE(legacy->GetFormat() == PacDXT1);
+            REQUIRE(legacy->GetMipmapCount() > 0);
+            REQUIRE(legacy->GetMipmapCount() <= chain.size());
+            for (int i = 0; i < legacy->GetMipmapCount(); ++i)
+            {
+                auto& mip = legacyMips[i];
+                INFO("mip " << i);
+                REQUIRE(mip._w == chain[i].width);
+                REQUIRE(mip._h == chain[i].height);
+                mip.SetDestFormat(PacARGB1555, 8);
+                std::vector<uint8_t> packed(mip.Size());
+                REQUIRE(legacy->GetMipmapData(packed.data(), mip, int(i)));
+                size_t differentAlpha = 0;
+                for (int y = 0; y < mip._h; ++y)
+                    for (int x = 0; x < mip._w; ++x)
+                    {
+                        const auto offset = y * mip.Pitch() + x * 2;
+                        const uint16_t pixel = packed[offset] | (uint16_t(packed[offset + 1]) << 8);
+                        const auto out = (y * mip._w + x) * 4;
+                        if (chain[i].rgba[out + 3] != ((pixel & 0x8000) ? 255 : 0))
+                            ++differentAlpha;
+                    }
+                REQUIRE(differentAlpha == 0);
+            }
         }
 #if CWR_HAS_VULKAN
         std::vector<vk::TextureMip> sampled;

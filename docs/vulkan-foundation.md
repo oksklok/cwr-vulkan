@@ -1841,3 +1841,60 @@ Both diagnostic builds pass. The three synchronized Vulkan sweeps close
 normally with 2791 / 2714 / 2975 submitted frames and zero Khronos core or
 synchronization warnings/errors through shutdown. GL33 references also exit 0.
 These probes are diagnostic-only, not a proposed production rendering change.
+
+### Foliage: residency explains one view, not every remaining edge difference
+
+The previous apple-tree texture attribution was incomplete. The traced
+`str_jablon.p3d` at engine position (3061.3242, 230.26288, 6334.9966) uses
+`kura_jablon_asi_ne.pac` and **`jablon.pac`** in LOD 0 (55 vertices), not
+`jablon_renovace.pac`. The latter is resident elsewhere in the scene. Forcing
+only that texture to full resolution in a diagnostic GL33 build did not change
+the target crown. Section-level tracing was necessary to identify the texture.
+
+GL33's `PrepareTexture` / `UseMipmap` requests depend on projected texture area
+and distance. The target's `jablon.pac` initially loads 64x64, then 128x128 in
+the town view; approaching to 12 m loads 256x256 and retains it on subsequent
+views. `jablon_renovace.pac` was 64x64 with coarser requested mips. The observed
+budget was only about 6.8 MB of 543 MB, with no allocation/copy-pressure boost;
+the largest-mip setting and 4096 texture-size limit were not restricting these
+256 textures. This is demand-driven residency, not evidence of exhausted VRAM.
+Vulkan retains the authored 256x256 base plus stored mip chain.
+
+In the gamma-1 town view, requesting mip 0 for the actual apple textures in GL33
+reduces the target-crown crop's mean RGB difference from 9.892 to 0.816 /255
+(x=210..489, y=165..399). The reference then shows the same finer leaf detail as
+Vulkan. The 12 m comparison is already close (0.730 /255 in its crown crop)
+because unmodified GL33 has loaded the full texture by then. No production
+residency override is retained, and Vulkan is not deliberately downgraded.
+
+The sweeps also cover 25 m, 65 m, reverse and side views, adjacent vegetation,
+town buildings, fence fronts/backs, low sun, night and fog. Some 25 m and side
+crown differences remain visible even after both paths have full residency
+(about 8.90 and 8.58 /255 in their respective crown crops). Both select the same
+target model LOD and section textures. These residuals are **not explained by
+the town-view residency result**; filtered cutout coverage still needs a
+strictly draw-matched investigation. Do not treat them as a confirmed Vulkan
+decoder bug or change a global cutoff to conceal them.
+
+The existing opt-in stock-bank test now includes the four cloud textures and
+`jablon`, `jablon_renovace`, `n_strom_13` and `krovi6`. It checks authored mip
+dimensions and translucent-versus-cutout classification, and compares every
+legacy foliage mip's binary alpha with the Vulkan decoder: all agree exactly.
+The foliage sources are DXT1. GL33 uploads them compressed, so RGB from a
+forced legacy RGB555 decode is not an appropriate reference for normal foliage
+sampling. Both backends use trilinear/16x anisotropic sampling without LOD bias;
+Vulkan's sampled-mip bound already matches GL33's stop before a dimension <=4.
+These checks rule out missing stored mips or differing source alpha masks, not
+every possible driver filtering or draw-state difference.
+
+Evidence is in ignored `build/shadow-live/foliage-{trace-vk,trace-gl33,
+full-gl33,full-family-gl33,target-vk}`. All 13-view runs exit normally; the two
+Vulkan traces submit 5703 and 5265 frames with zero validation findings through
+shutdown. Temporary source probes and the GL33 full-res override were removed
+after archiving their patch under `build/cloud-evidence/temporary-probes.patch`.
+No runtime renderer change is justified by this investigation so far.
+
+Both probe-free builds pass. Focused rendering/decoder tests pass 820 assertions
+in 37 cases with Vulkan enabled and 808 in 35 with Vulkan disabled; the expanded
+stock test passes 684 / 504 assertions respectively. The driver-free Vulkan
+policy suite passes 286 checks (including its intentional mock teardown error).
