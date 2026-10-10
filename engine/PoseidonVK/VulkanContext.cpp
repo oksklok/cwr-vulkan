@@ -236,6 +236,8 @@ void VulkanContext::SelectDevice()
             bestScore = score;
             _physical = physical;
             _families = families;
+            _timestampBits = properties[families.graphics].timestampValidBits;
+            _timestampPeriod = deviceProperties.limits.timestampPeriod;
             _deviceName = deviceProperties.deviceName;
             std::fprintf(stderr, "Vulkan: candidate '%s', api=%u, driver=%u, queues=%u/%u\n",
                          deviceProperties.deviceName, deviceProperties.apiVersion, deviceProperties.driverVersion,
@@ -331,6 +333,13 @@ void VulkanContext::CreateFrameResources()
         VkFenceCreateInfo fence{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
         fence.flags = VK_FENCE_CREATE_SIGNALED_BIT;
         Check(vkCreateFence(_device, &fence, nullptr, &frame.submitted), "create frame fence");
+        if (_profile.enabled && _timestampBits)
+        {
+            VkQueryPoolCreateInfo queries{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+            queries.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            queries.queryCount = 2;
+            Check(vkCreateQueryPool(_device, &queries, nullptr, &frame.ssaoQueries), "create AO timestamps");
+        }
         const auto prefix = "PoseidonVK frame " + std::to_string(i);
         Name(VK_OBJECT_TYPE_COMMAND_BUFFER, ObjectHandle(frame.command), (prefix + " commands").c_str());
         Name(VK_OBJECT_TYPE_SEMAPHORE, ObjectHandle(frame.acquired), (prefix + " acquire").c_str());
@@ -613,6 +622,19 @@ bool VulkanContext::BeginFrame(uint32_t width, uint32_t height)
     const double fenceEnd = _profile.enabled ? ProfileClock() : 0;
     if (_profile.enabled)
         _profile.fenceMs += fenceEnd - _profile.frameStart;
+    // Read only after this slot's existing fence; never wait just for profiling.
+    if (frame.ssaoTimestamped)
+    {
+        uint64_t stamps[2]{};
+        if (vkGetQueryPoolResults(_device, frame.ssaoQueries, 0, 2, sizeof(stamps), stamps,
+                                 sizeof(uint64_t), VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
+        {
+            const uint64_t mask = _timestampBits == 64 ? UINT64_MAX : (uint64_t(1) << _timestampBits) - 1;
+            _profile.ssaoGpuMs += double((stamps[1] - stamps[0]) & mask) * _timestampPeriod / 1e6;
+            ++_profile.ssaoGpuSamples;
+        }
+        frame.ssaoTimestamped = false;
+    }
     frame.meshes.clear();
     frame.textures.clear();
     // Only this frame's completed fence permits overwriting its mapped pages.
@@ -817,8 +839,10 @@ void VulkanContext::ReportProfile()
         _profile.stateCommands[4] / frames, _profile.stateCommands[5] / frames,
         _profile.stateCommands[6] / frames, _profile.stateCommands[7] / frames);
     const double last = _profile.lastEnd;
-    std::fprintf(stderr, "Vulkan SSAO: enabled=%d passes/frame=%.2f record_ms/frame=%.4f radius=%.2f strength=%.2f bias=%.3f fade=%.1f\n",
+    std::fprintf(stderr, "Vulkan SSAO: enabled=%d passes/frame=%.2f record_ms/frame=%.4f gpu_ms/pass=%.4f gpu_samples=%llu radius=%.2f strength=%.2f bias=%.3f fade=%.1f\n",
                  int(_ssaoEnabled), _profile.ssaoPasses / frames, _profile.ssaoMs / frames,
+                 _profile.ssaoGpuSamples ? _profile.ssaoGpuMs / _profile.ssaoGpuSamples : -1.0,
+                 static_cast<unsigned long long>(_profile.ssaoGpuSamples),
                  _ssaoSettings[1], _ssaoSettings[0], _ssaoSettings[2], _ssaoSettings[3]);
     _profile = {};
     _profile.enabled = true;
@@ -883,6 +907,8 @@ unsigned VulkanContext::Shutdown() noexcept
                 vkDestroySemaphore(_device, frame.acquired, nullptr);
             if (frame.submitted)
                 vkDestroyFence(_device, frame.submitted, nullptr);
+            if (frame.ssaoQueries)
+                vkDestroyQueryPool(_device, frame.ssaoQueries, nullptr);
             frame = {};
         }
         if (_pool)

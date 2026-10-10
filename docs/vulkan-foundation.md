@@ -2078,8 +2078,9 @@ One fullscreen draw reconstructs view positions/normals from depth, samples a
 fixed eight-direction kernel, and multiplicatively blends restrained occlusion
 into existing scene color. World geometry/shadows/transparency precede AO;
 cockpit/weapon overlays, HUD/map/UI and the unchanged final gamma pass follow.
-Interior depth clears trigger the world composite before replacing its depth
-projection. Menu/briefing/map/pause rendering skips AO. A compatible LOAD pass
+The world composite runs before the cockpit pass; interior depth clears also
+guard against replacing its depth projection early. Menu/briefing/map/pause
+rendering skips AO. A compatible LOAD pass
 resumes color/depth/stencil afterward. No extra images, geometry pass, per-frame
 allocations, blur, temporal history or material changes are introduced.
 
@@ -2119,3 +2120,54 @@ returned 0 with 62,340 submitted / 62,338 presented and zero Khronos core/sync
 errors or warnings; the two unmatched presentations coincided with recreation.
 Local raw captures/logs/profiles are under `build/shadow-live/ssao-quality2-vk`,
 `ssao-reference-gl33` and `ssao-tank-gl33` (ignored, not stock-asset changes).
+
+### Performance and final qualification
+
+RTX 4060 Ti, driver 617.14, 1920x1080, warmed fixed views, VSync off, existing
+240 FPS cap not reached, validation off. Medians of the existing two-second
+profile intervals over 12-second off/on samples (`ssao-final-perf3-air-vk`,
+`ssao-gpu-tank-vk`):
+
+| Scene | Frame p95 off / on | AO GPU ms/pass | AO CPU recording ms/frame | New steady allocations/frame |
+| --- | --- | --- | --- | --- |
+| Ground Attack airfield | 6.227 / 6.216 ms | 0.263 | 0.012 | 0 |
+| Heavy Metal exterior | 6.198 / 6.210 ms | 0.342 | 0.013 | 0 |
+
+Whole-frame interval averages were noisy (final airfield 6.360 -> 6.366 ms, tank
+13.429 -> 11.175 ms); repeated earlier pairs also changed sign. They do **not**
+establish an end-to-end FPS penalty or speedup. The GPU interval and AO-specific
+CPU recording cost are the useful isolated measurements; no optimization was
+made on the basis of the noisy averages. There is no extra geometry/depth pass:
+sampling reuses the original depth. Depth store/layout overhead was not isolated
+from the full frame. Two timestamps per frame slot are allocated only when
+`CWR_VK_PROFILE` is enabled and the graphics queue supports them, read after the
+existing fence without a new wait, and destroyed with frame resources. The
+`gpu_ms/pass=-1` diagnostic means no completed sample, not negative GPU time.
+
+The final instrumented HMMWV check repeated driving, assisted exit/re-entry,
+normal Save/Load, map, AO toggles and resize/minimize/restore: exit 0, 7,106
+submitted / 7,105 presented, zero core/sync errors/warnings through shutdown.
+SSAO with profiling disabled also passed live movement/fire/reload and shutdown
+(3,519/3,519, zero messages). A further Steal the Car grenade throw (6 -> 5)
+and developer-spawned stock smoke effect rendered with usable HUD and transparent
+particles; its timed normal exit was clean (11,624/11,624, zero messages).
+Final ordering review caught infantry optics bypassing the interior depth-clear
+hook. Moving AO before the entire cockpit pass excludes these scopes and weapon
+overlays too. Sniper Team M21 off/on optics, firing/map checks and Ground Attack
+airborne cockpit/load checks passed with zero core/sync messages through normal
+shutdown (7,693/7,693 and 4,904/4,904). Separate paired cockpit captures confirm
+unchanged instruments. A later malformed harness ammo query ended one diagnostic
+run in test-mode script-error shutdown; it is not counted as normal-exit evidence.
+Both builds and default GL33 startup pass. Final focused suites pass 74/72 cases
+(1,693/1,498 assertions), stock-mip checks 684/504 assertions and Vulkan policy
+guards 295 checks. All 7,596 stock files retain their starting path/size/mtime.
+
+Limitations: this is deliberately modest depth-only SSAO, not ambient lighting
+replacement. Hidden/off-screen geometry cannot occlude; thin/cutout surfaces and
+screen edges are approximate, with no temporal stabilization or blur. Transparent
+world effects receive modulation based on the opaque depth behind them; they
+have no separate AO mask. No serious transparency, water, shadow, UI or gamma
+regression was observed in these checks, but arbitrary mods, unusual world-view
+crops and multi-hour sessions are not qualified. Cockpit/weapon overlays are
+excluded along with UI. Enablement is process-local/developer-console only,
+not yet a persistent graphics-menu option. Keep the enhancement opt-in.

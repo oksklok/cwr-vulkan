@@ -383,6 +383,9 @@ void Scene::ObjectsDrawn()
     // release all references
     DrawRain();
 
+    // All world alpha effects are complete; infantry optics (unlike vehicle
+    // interiors) do not clear depth, so exclude the entire cockpit pass here.
+    GEngine->FinishWorldEffects();
     DrawObjectsAndShadowsPass3();
 
     // clear working list

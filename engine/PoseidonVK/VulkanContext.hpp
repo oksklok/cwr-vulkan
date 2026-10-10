@@ -177,8 +177,8 @@ class VulkanContext
         double lastEnd = 0, frameStart = 0;
         double recordMs = 0, geometryMs = 0, textureMs = 0, fenceMs = 0, retireMs = 0, acquireMs = 0, presentMs = 0;
         double commandStart = 0, commandMs = 0, submitMs = 0, retentionMs = 0, bindingMs = 0;
-        double ssaoMs = 0;
-        uint64_t ssaoPasses = 0;
+        double ssaoMs = 0, ssaoGpuMs = 0;
+        uint64_t ssaoPasses = 0, ssaoGpuSamples = 0;
         // Pipeline, textures, lighting, vertex, index, viewport, scissor, push constants.
         std::array<uint64_t, 8> stateCommands{};
         uint64_t transient = 0, allocations = 0, textureUploads = 0, litDraws = 0, localLights = 0;
@@ -202,6 +202,8 @@ class VulkanContext
         VkCommandBuffer command = VK_NULL_HANDLE;
         VkSemaphore acquired = VK_NULL_HANDLE;
         VkFence submitted = VK_NULL_HANDLE;
+        VkQueryPool ssaoQueries = VK_NULL_HANDLE;
+        bool ssaoTimestamped = false;
         std::vector<std::shared_ptr<MeshBuffers>> meshes;
         std::vector<std::shared_ptr<TextureImage>> textures;
         std::vector<TransientPage> transientPages;
@@ -228,6 +230,8 @@ class VulkanContext
     VkPhysicalDevice _physical = VK_NULL_HANDLE;
     VkDevice _device = VK_NULL_HANDLE;
     QueueFamilies _families;
+    uint32_t _timestampBits = 0;
+    float _timestampPeriod = 0;
     VkQueue _graphics = VK_NULL_HANDLE;
     VkQueue _present = VK_NULL_HANDLE;
     VkCommandPool _pool = VK_NULL_HANDLE;

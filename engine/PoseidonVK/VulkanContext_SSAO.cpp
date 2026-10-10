@@ -159,8 +159,14 @@ void VulkanContext::DrawSSAO(const std::array<float, 4>& projection)
         return;
     FlushScreenBatch();
     const double start = _profile.enabled ? ProfileClock() : 0;
-    const auto command = _frames[_frame].command;
+    auto& frame = _frames[_frame];
+    const auto command = frame.command;
     vkCmdEndRenderPass(command);
+    if (frame.ssaoQueries)
+    {
+        vkCmdResetQueryPool(command, frame.ssaoQueries, 0, 2);
+        vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, frame.ssaoQueries, 0);
+    }
     _commands = {};
     VkRenderPassBeginInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     pass.renderPass = _ssaoPass;
@@ -179,6 +185,11 @@ void VulkanContext::DrawSSAO(const std::array<float, 4>& projection)
     vkCmdPushConstants(command, _ssaoLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), push.data());
     vkCmdDraw(command, 3, 1, 0, 0);
     vkCmdEndRenderPass(command);
+    if (frame.ssaoQueries)
+    {
+        vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, frame.ssaoQueries, 1);
+        frame.ssaoTimestamped = true;
+    }
     pass.renderPass = _resumePass;
     pass.framebuffer = _framebuffers[_image];
     vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);

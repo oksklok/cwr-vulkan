@@ -1511,7 +1511,6 @@ void World::Simulate(float deltaT, bool& enableDraw)
 
                 _scene.ObjectsDrawn();
                 GEngine->FlushQueues();
-                GEngine->FinishWorldEffects();
 
                 // Frame validation — ExtractSceneInputs → BuildFrame →
                 // ValidateFrame + runtime checks, after the world's
