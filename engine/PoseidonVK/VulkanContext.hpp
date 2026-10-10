@@ -248,12 +248,14 @@ class VulkanContext
         VkImageView view = VK_NULL_HANDLE;
     };
     std::vector<DepthAttachment> _depth;
+    std::vector<VkImageView> _sampledDepthViews; // Depth only; attachment views retain stencil for shadows.
     // Same format/extent as the swapchain: keep the existing blend/color-space
     // behavior. Each acquired image owns its scene color and final-pass set.
     struct GammaTarget
     {
         DepthAttachment color;
         VkDescriptorSet set = VK_NULL_HANDLE;
+        VkDescriptorSet depthSet = VK_NULL_HANDLE;
         VkFramebuffer framebuffer = VK_NULL_HANDLE;
     };
     std::vector<GammaTarget> _gammaTargets;

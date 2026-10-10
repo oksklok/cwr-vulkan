@@ -84,7 +84,7 @@ void VulkanContext::CreateGammaPass(VkFormat format)
     pass.pDependencies = &dependency;
     Require(vkCreateRenderPass(_device, &pass, nullptr, &_gammaPass), "create final pass");
 
-    const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, uint32_t(_gammaTargets.size())};
+    const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, uint32_t(2 * _gammaTargets.size())};
     VkDescriptorPoolCreateInfo pool{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     pool.maxSets = size.descriptorCount;
     pool.poolSizeCount = 1;
@@ -106,6 +106,12 @@ void VulkanContext::CreateGammaPass(VkFormat format)
         write.descriptorCount = 1;
         write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         write.pImageInfo = &image;
+        vkUpdateDescriptorSets(_device, 1, &write, 0, nullptr);
+        Require(vkAllocateDescriptorSets(_device, &allocation, &target.depthSet), "allocate sampled depth descriptor");
+        const VkDescriptorImageInfo depth{_textureSamplers[7], _sampledDepthViews[i],
+                                          VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL};
+        write.dstSet = target.depthSet;
+        write.pImageInfo = &depth;
         vkUpdateDescriptorSets(_device, 1, &write, 0, nullptr);
         VkFramebufferCreateInfo framebuffer{VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO};
         framebuffer.renderPass = _gammaPass;

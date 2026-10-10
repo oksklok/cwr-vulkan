@@ -2047,3 +2047,21 @@ all 7,596 stock files matched the starting path/size/UTC-mtime inventory.
 Ignored evidence lives in `build/shadow-live/mission-flow-vk2`,
 `mission-breadth-vk`, `tracer-{diag-vk,reference-gl33,fixed-diagnostic-vk}` and
 `mission-final-vk` (screenshots, actions, profiles, logs and crash dumps).
+
+## Optional SSAO: depth access milestone (2026-10-11)
+
+The existing per-swapchain depth/stencil target is now sampled-capable and
+stores depth after the scene pass. A separate depth-only view/point-clamp
+descriptor leaves the depth/stencil attachment view and projected shadows
+unchanged. The same D32S8/D24S8 preference is retained, requiring both attachment
+and sampling support. Early/late depth writes become visible to fragment
+sampling in depth/stencil-read-only layout at pass end. Views/descriptors follow
+the existing idle-before-recreate/shutdown lifetime. No extra depth render pass
+or visual effect is enabled by this milestone; gamma and UI ordering are unchanged.
+
+Both builds and existing focused shape/PAA/factory/window tests pass; the Vulkan
+policy suite passes 286 checks. Live Steal the Car and Heavy Metal checks cover
+geometry, shadows, firing, map, 800x600 -> 960x640 resize and minimize/restore.
+`ssao-depth-resize-vk` visibly resumed gameplay and exited 0 with zero core/sync
+validation errors or warnings through shutdown. Evidence is ignored locally
+under `build/shadow-live/ssao-depth*`.

@@ -364,6 +364,10 @@ void VulkanContext::DestroySwapchain() noexcept
         vkDestroyFramebuffer(_device, framebuffer, nullptr);
     _framebuffers.clear();
     DestroyGammaResources();
+    for (auto view : _sampledDepthViews)
+        if (view)
+            vkDestroyImageView(_device, view, nullptr);
+    _sampledDepthViews.clear();
     for (auto& depth : _depth)
     {
         if (depth.view)
@@ -455,23 +459,24 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
     {
         VkFormatProperties properties{};
         vkGetPhysicalDeviceFormatProperties(_physical, candidate, &properties);
-        if (properties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
+        constexpr auto required = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+        if ((properties.optimalTilingFeatures & required) == required)
         {
             _depthFormat = candidate;
             break;
         }
     }
     if (_depthFormat == VK_FORMAT_UNDEFINED)
-        throw std::runtime_error("Vulkan Shape: no supported depth/stencil attachment format");
+        throw std::runtime_error("Vulkan Shape: no supported sampled depth/stencil attachment format");
     VkAttachmentDescription depthAttachment{};
     depthAttachment.format = _depthFormat;
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
     const VkAttachmentDescription attachments[] = {attachment, depthAttachment};
     const VkAttachmentReference depthReference{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     VkAttachmentReference reference{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
@@ -493,9 +498,10 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
     // Make every scene blend/store visible to the final fullscreen sample.
     dependencies[1].srcSubpass = 0;
     dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
-    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependencies[1].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
+                                   VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
     dependencies[1].dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-    dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    dependencies[1].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     VkRenderPassCreateInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
     pass.attachmentCount = 2;
@@ -511,6 +517,7 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
     _framebuffers.reserve(_images.size());
     _rendered.reserve(_images.size());
     _depth.reserve(_images.size());
+    _sampledDepthViews.reserve(_images.size());
     _gammaTargets.resize(_images.size());
     for (size_t i = 0; i < _images.size(); ++i)
     {

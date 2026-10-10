@@ -500,7 +500,7 @@ void VulkanContext::CreateDepthAttachment(DepthAttachment& depth)
     image.mipLevels = image.arrayLayers = 1;
     image.samples = VK_SAMPLE_COUNT_1_BIT;
     image.tiling = VK_IMAGE_TILING_OPTIMAL;
-    image.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    image.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     image.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     Require(vkCreateImage(_device, &image, nullptr, &depth.image), "create depth image");
     VkMemoryRequirements requirements{};
@@ -521,5 +521,8 @@ void VulkanContext::CreateDepthAttachment(DepthAttachment& depth)
     view.format = _depthFormat;
     view.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1};
     Require(vkCreateImageView(_device, &view, nullptr, &depth.view), "create depth view");
+    view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    _sampledDepthViews.push_back(VK_NULL_HANDLE);
+    Require(vkCreateImageView(_device, &view, nullptr, &_sampledDepthViews.back()), "create sampled depth view");
 }
 } // namespace Poseidon::vk
