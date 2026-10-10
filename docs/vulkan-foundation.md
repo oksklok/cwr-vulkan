@@ -5,7 +5,7 @@ shadows and ordered screen batching. The latest measured Infantry map result is
 6.55 -> 47.49 FPS with 91.25% fewer screen draws. The dated milestones below are
 historical; their earlier unsupported-feature lists are superseded by later work.
 
-Repository migration: `oksklok/cwr-vulkan` is an independent clone with its own
+Repository migration: `vici1129/cwr-vulkan` is an independent clone with its own
 `.git` directory and official `BohemiaInteractive/CWR` upstream. Its main starts
 at official 3.05 (`ffc6183`) and replays only the six Vulkan commits from the
 historical branch through `f88f733`; no Chinese localization history is included.
