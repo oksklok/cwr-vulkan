@@ -166,6 +166,15 @@ int main()
                       "no artificial LOD bias or mip clamp");
             }
         checks += TestVulkanBuffers();
+        const std::array<TextureMip, 7> square{{{128,128,nullptr}, {64,64,nullptr}, {32,32,nullptr},
+                                               {16,16,nullptr}, {8,8,nullptr}, {4,4,nullptr}, {2,2,nullptr}}};
+        Check(TextureSampledMipCount(square) == 5, "stock detail chain matches GL33 8x8 tail");
+        auto rectangle = square;
+        for (auto& mip : rectangle) mip.height = std::max(1u, mip.height / 4);
+        Check(TextureSampledMipCount(rectangle) == 3, "rectangular chain stops on either dimension");
+        Check(TextureSampledMipCount(std::span(square).first(3)) == 3, "short stored chains remain short");
+        Check(TextureSampledMipCount(std::span(square).last(1)) == 1, "tiny UI base remains accessible");
+        Check(TextureSampledMipCount({}) == 0, "empty chain does not invent levels");
         checks += TestVulkanCommands();
         Check(sizeof(TriangleVertex) == 20 && sizeof(TriangleIndices[0]) == 2,
               "diagnostic vertex/index formats must match the pipeline");

@@ -18,6 +18,16 @@ struct TextureMip
     uint32_t width, height;
     const void* rgba;
 };
+inline uint32_t TextureSampledMipCount(std::span<const TextureMip> mips)
+{
+    // GL33's TextureSourcePac stops BEFORE either dimension reaches 4 pixels.
+    // Keep all decoded/uploaded bytes, but expose the same sampled tail range.
+    // Always retain a valid base for tiny/single-level dynamic UI textures.
+    for (size_t level = 1; level < mips.size(); ++level)
+        if (mips[level].width <= 4 || mips[level].height <= 4)
+            return uint32_t(level);
+    return uint32_t(mips.size());
+}
 // The eight existing shared samplers mirror GL33: anisotropic trilinear for
 // linear modes, exact nearest sampling for point modes, no LOD bias.
 inline float TextureAnisotropy(bool supported, float limit)

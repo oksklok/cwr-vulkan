@@ -5,6 +5,8 @@
 #endif
 #include <catch2/catch_approx.hpp>
 #include <fstream>
+#include <filesystem>
+#include <chrono>
 #include <iterator>
 #include <vector>
 #include "test_fixtures.hpp"
@@ -16,6 +18,59 @@
 #include <vector>
 
 using namespace Poseidon;
+
+TEST_CASE("PAADecoder: AI88 preserves all intensity and alpha bits in every stored mip", "[Graphics][PAADecoder]")
+{
+    std::vector<uint8_t> bytes{0x80, 0x80, 0, 0};
+    auto append = [&](uint32_t value, int count)
+    {
+        for (int i = 0; i < count; ++i)
+            bytes.push_back(uint8_t(value >> (8 * i)));
+    };
+    std::vector<std::vector<uint8_t>> expected;
+    for (int size : {16, 8, 4, 2})
+    {
+        append(size, 2);
+        append(size, 2);
+        append(size * size * 2 + size * size / 4 + 4, 3);
+        std::vector<uint8_t> rgba;
+        int checksum = 0;
+        for (int i = 0; i < size * size; ++i)
+        {
+            // Literal-only engine LZ stream: eight bytes per flag byte.
+            if (i % 4 == 0)
+                bytes.push_back(255);
+            const uint8_t intensity = uint8_t(i + 3), alpha = uint8_t(255 - i);
+            bytes.push_back(intensity);
+            bytes.push_back(alpha);
+            checksum += int8_t(intensity) + int8_t(alpha);
+            rgba.insert(rgba.end(), {intensity, intensity, intensity, alpha});
+        }
+        append(uint32_t(checksum), 4);
+        expected.push_back(std::move(rgba));
+    }
+    append(0, 4);
+    const auto chain = DecodePAAMipChainBuffer(bytes.data(), bytes.size(), true);
+    REQUIRE(chain.size() == expected.size());
+    for (size_t i = 0; i < chain.size(); ++i)
+        REQUIRE(chain[i].rgba == expected[i]);
+    REQUIRE(DecodePAABuffer(bytes.data(), bytes.size(), true).rgba == expected.front());
+    REQUIRE(ClassifyAlpha(chain[0].rgba.data(), 256).kind == AlphaStats::Blend);
+
+    struct TemporaryFile
+    {
+        std::filesystem::path path;
+        ~TemporaryFile() { std::error_code ec; std::filesystem::remove(path, ec); }
+    } file{std::filesystem::temp_directory_path() /
+           ("cwr-ai88-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + ".paa")};
+    {
+        std::ofstream out(file.path, std::ios::binary);
+        out.write(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+        REQUIRE(out.good());
+    }
+    for (size_t i = 0; i < expected.size(); ++i)
+        REQUIRE(DecodePAAFileMip(file.path.string(), int(i)).rgba == expected[i]);
+}
 
 #if CWR_HAS_VULKAN
 TEST_CASE("Vulkan CPU pixel lookup clamps like PacLevelMem including the fog horizon sample", "[Graphics][PAADecoder]")
@@ -116,7 +171,8 @@ TEST_CASE("PAADecoder: stock bank mip chains agree with the existing top decoder
     const std::string directory = std::string(root) + "/dta/";
     GFileBanks.Load(directory.c_str(), "", "data", true);
     GFileBanks.Load(directory.c_str(), "", "abel", true);
-    for (const char* name : {"data\\domek1_front_okna.pac", "data\\domek2_side.paa", "data\\detail_dx.paa", "abel\\rwn.paa", "abel\\s3.paa"})
+    for (const char* name : {"data\\domek1_front_okna.pac", "data\\domek2_side.paa", "data\\detail_dx.paa", "abel\\rwn.paa", "abel\\s3.paa",
+                             "data\\more_anim.03.pac", "data\\specular_dx.paa", "data\\silnice.paa"})
     {
         INFO(name);
         QIFStreamB source;
@@ -128,6 +184,8 @@ TEST_CASE("PAADecoder: stock bank mip chains agree with the existing top decoder
         REQUIRE(chain.size() > 1);
         const auto top = DecodePAABuffer(source.act(), source.rest(), paa);
         REQUIRE(chain[0].rgba == top.rgba);
+        if (uint8_t(source.act()[0]) == 0x80 && uint8_t(source.act()[1]) == 0x80)
+            REQUIRE(ClassifyAlpha(top.rgba.data(), size_t(top.width * top.height)).kind == AlphaStats::Blend);
         for (size_t i = 1; i < chain.size(); ++i)
         {
             REQUIRE(chain[i].width == std::max(1, chain[i - 1].width / 2));
@@ -135,6 +193,16 @@ TEST_CASE("PAADecoder: stock bank mip chains agree with the existing top decoder
             REQUIRE(chain[i].rgba.size() == size_t(chain[i].width * chain[i].height * 4));
         }
 #if CWR_HAS_VULKAN
+        std::vector<vk::TextureMip> sampled;
+        for (const auto& mip : chain)
+            sampled.push_back({uint32_t(mip.width), uint32_t(mip.height), mip.rgba.data()});
+        const auto count = vk::TextureSampledMipCount(sampled);
+        REQUIRE(count > 0);
+        REQUIRE(count <= chain.size());
+        if (std::string(name) == "data\\detail_dx.paa") REQUIRE(count == 5);
+        if (std::string(name) == "data\\more_anim.03.pac") REQUIRE(count == 7);
+        if (std::string(name) == "data\\specular_dx.paa") REQUIRE(count == 6);
+        if (std::string(name) == "data\\silnice.paa") REQUIRE(count == 4);
         // Weather restricts a stored sky chain to its top level. Exercise the
         // same contract without a GPU; invalid growth must not invent mips.
         TextureVK texture(name);

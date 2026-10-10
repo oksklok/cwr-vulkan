@@ -13,9 +13,12 @@ TEST_CASE("Vulkan stock water separates secondary texture source from shader fam
     // LandscapeRender's current WaterFlags and the captured Infantry section.
     const auto water = render::SplitLegacy(SpecularTexture | NoClamp);
     REQUIRE(vk::SupportedShapeSpec(water));
-    REQUIRE(vk::ShapeSecondaryMode(water) == 1.f);
-    REQUIRE(vk::ShapeSecondaryMode(render::SplitLegacy(DetailTexture)) == 1.f);
-    REQUIRE(vk::ShapeSecondaryMode(render::SplitLegacy(0)) == 0.f);
+    REQUIRE(vk::ShapeSecondaryMode(water, true) == 1.f);
+    REQUIRE(vk::ShapeSecondaryMode(water, false) == 0.f);
+    REQUIRE(vk::ShapeSecondaryMode(render::SplitLegacy(DetailTexture), true) == 1.f);
+    REQUIRE(vk::ShapeSecondaryMode(render::SplitLegacy(DetailTexture), false) == 0.f);
+    REQUIRE(vk::ShapeSecondaryMode(render::SplitLegacy(0), true) == 0.f);
+    REQUIRE(vk::ShapeSecondaryMode(render::SplitLegacy(0), false) == 0.f);
     REQUIRE(vk::ShapeSampler(water) == 0); // Both ordinary water textures repeat.
     const auto alpha = vk::ShapeAlpha(water, AlphaStats::Opaque, 1);
     REQUIRE_FALSE(alpha.blend);
@@ -25,7 +28,8 @@ TEST_CASE("Vulkan stock water separates secondary texture source from shader fam
     // IsWater is a distinct shader family; this fix must not change engine flags
     // or silently advertise support for the as-yet unused explicit Water path.
     const auto explicitWater = render::SplitLegacy(IsWater | SpecularTexture | NoClamp);
-    REQUIRE(vk::ShapeSecondaryMode(explicitWater) == 2.f);
+    REQUIRE(vk::ShapeSecondaryMode(explicitWater, true) == 2.f);
+    REQUIRE(vk::ShapeSecondaryMode(explicitWater, false) == 2.f);
     REQUIRE_FALSE(vk::SupportedShapeSpec(explicitWater));
 }
 

@@ -154,6 +154,7 @@ std::shared_ptr<TextureImage> VulkanContext::UploadTexture(std::span<const Textu
         view.viewType = VK_IMAGE_VIEW_TYPE_2D;
         view.format = image.format;
         view.subresourceRange = barrier.subresourceRange;
+        view.subresourceRange.levelCount = TextureSampledMipCount(mips);
         Require(vkCreateImageView(_device, &view, nullptr, &texture->view), "create texture view");
         const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 8};
         VkDescriptorPoolCreateInfo pool{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};

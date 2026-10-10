@@ -64,14 +64,14 @@ void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& s
     }
     _sectionTexture.reset();
     _sectionDetail.reset();
+    _secondaryMode = vk::ShapeSecondaryMode(spec, IsMultitexturing());
     const bool bump = (spec.backend & render::Backend::SpecularTexture) != render::Backend::None;
-    if (bump || (spec.backend & render::Backend::DetailTexture) != render::Backend::None)
+    if (_secondaryMode != 0 && (bump || (spec.backend & render::Backend::DetailTexture) != render::Backend::None))
     {
         const auto texture = _textures.Load(Remaster >> "CfgDetailTextures" >> (bump ? "specular" : "detail"));
         if (!texture)
             throw std::runtime_error("Vulkan terrain secondary texture is missing");
         _sectionDetail = static_cast<TextureVK*>(texture.GetRef())->Image(_vk);
-        _secondaryMode = vk::ShapeSecondaryMode(spec);
         if (bump && GScene->MainLight())
         {
             const auto direction = GScene->MainLight()->SunDirection();

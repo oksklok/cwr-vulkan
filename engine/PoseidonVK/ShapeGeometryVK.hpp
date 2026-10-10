@@ -14,9 +14,9 @@ namespace Poseidon::vk
 // Texture source and shader family are independent. In particular landscape
 // water uses SpecularTexture WITHOUT IsWater: GL33 selects PSDetail/TGDetail,
 // sampling the specular texture's alpha at 32x UV, not its RGB as a bump normal.
-inline float ShapeSecondaryMode(const render::LegacySpec& spec)
+inline float ShapeSecondaryMode(const render::LegacySpec& spec, bool multitexturing)
 {
-    const auto pass = render::BuildRenderPassDescriptor(spec, {true, true});
+    const auto pass = render::BuildRenderPassDescriptor(spec, {true, multitexturing});
     return pass.shader == render::ShaderFamily::Water ? 2.f :
            pass.shader == render::ShaderFamily::Detail ? 1.f : 0.f;
 }

@@ -1186,3 +1186,36 @@ texture versions were added. The RTX 4060 Ti reports 16x; the six-view run close
 normally with 3,351 submissions and zero core/synchronization validation issues.
 The Vulkan build passes and driver-free guards pass 261 checks, including all
 eight sampler combinations at fallback/8x/16x and capability-limit handling.
+
+### Stored mip range and AI88 precision
+
+Temporary upload traces established that GL33's TextureSourcePac stops before
+either mip dimension reaches 4, whereas Vulkan sampled the entire stored chain.
+The Vulkan image view now exposes the same tail (all original mip bytes are
+still decoded/uploaded). Examples: detail_dx 128x128 exposes 5 of 7 levels;
+specular_dx 256x256 6 of 8; silnice 256x64 4 of 6; more_anim.03 512x512 7 of 8.
+Single-level/tiny UI images retain their base. GL33's observed maximum size was
+4096 with largestUsed=0; no top-size limit explains these scenes. UseMipmap is
+a GL33 residency request, not an explicit shader LOD; Vulkan remains fully
+resident. ObjMipmapCoef differs (1.5 versus 1), but has no call sites in this
+tree, so it was not changed. No bias, generated mipmaps or streaming was added.
+
+The matched low-angle HMMWV road exposed another concrete cause: anisotropy
+alone left broad gray bands. Stock silnice, detail_dx and specular_dx are AI88.
+GL33 uploads their native 8-bit intensity/alpha as RG8; the shared CPU decoder
+used by Vulkan converted them through ARGB4444, discarding half the bits.
+Both memory-chain and file-mip decoding now expand native AI88 directly to
+RGBA8. The new synthetic all-256-values/multiple-mip regression failed before
+the fix and passes afterward, including alpha precision. Stock alpha classes
+remain Blend; classification policy is unchanged. `filter-ai88-road/road-noon.png`
+now retains the fine road grain seen in `filter-gl33-road`, unlike
+`filter-before-road` and the anisotropy-only comparison. `filter-ai88-water`
+also preserves coastal detail without the former white patches.
+
+ShapeSecondaryMode now uses IsMultitexturing(), matching GL33's detail shader
+selection and avoiding unused secondary uploads when disabled. Focused tests
+cover enabled/disabled detail/specular behavior, explicit IsWater selection,
+mip-view bounds and full AI88 bytes. Both builds pass: 34 cases / 301 assertions
+Vulkan ON, 33 / 296 OFF; eight stock textures pass 265 assertions ON and the
+driver-free Vulkan guards pass 266 checks. Temporary texture/road traces were
+removed. No GL33 drawing code, stock assets, shaders or batching changed.
