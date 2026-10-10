@@ -203,7 +203,8 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         viewport.viewportCount = viewport.scissorCount = 1;
         const auto raster = ShapeRasterization(shadow);
         VkPipelineMultisampleStateCreateInfo samples{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-        samples.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        samples.rasterizationSamples = _worldActive ? _worldSamples : VK_SAMPLE_COUNT_1_BIT;
+        samples.alphaToCoverageEnable = _worldActive && _worldSamples != VK_SAMPLE_COUNT_1_BIT && !translucent && !shadow;
         VkPipelineDepthStencilStateCreateInfo depth{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
         depth.depthTestEnable = depthTest;
         depth.depthWriteEnable = depthTest && depthWrite;
@@ -252,12 +253,12 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         pipeline.pColorBlendState = &blend;
         pipeline.pDynamicState = &dynamic;
         pipeline.layout = _shapeLayout;
-        pipeline.renderPass = _renderPass;
+        pipeline.renderPass = _worldActive ? _worldPass : _renderPass;
         Require(vkCreateGraphicsPipelines(
                     _device, VK_NULL_HANDLE, 1, &pipeline, nullptr,
-                    shadow        ? &_shadowPipelines[screen ? 1 : 0]
-                    : screen      ? &_screenPipelines[ScreenPipelineIndex(depthTest, translucent, depthWrite, additive)]
-                                  : &_shapePipelines[ScreenPipelineIndex(depthTest, translucent, depthWrite)]),
+                    shadow        ? &(_worldActive ? _worldShadowPipelines : _shadowPipelines)[screen ? 1 : 0]
+                    : screen      ? &(_worldActive ? _worldScreenPipelines : _screenPipelines)[ScreenPipelineIndex(depthTest, translucent, depthWrite, additive)]
+                                  : &(_worldActive ? _worldShapePipelines : _shapePipelines)[ScreenPipelineIndex(depthTest, translucent, depthWrite)]),
                 "create graphics pipeline");
     }
     catch (...)
@@ -312,9 +313,9 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
         throw std::logic_error("Vulkan Shape: texture is not live on this device");
     if (sampler >= 8)
         throw std::out_of_range("Vulkan Shape: sampler index");
-    auto& pipeline = shadow  ? _shadowPipelines[screen ? 1 : 0]
-                    : screen ? _screenPipelines[ScreenPipelineIndex(depthTest, blend, depthWrite, additive)]
-                             : _shapePipelines[ScreenPipelineIndex(depthTest, blend, depthWrite)];
+    auto& pipeline = shadow  ? (_worldActive ? _worldShadowPipelines : _shadowPipelines)[screen ? 1 : 0]
+                    : screen ? (_worldActive ? _worldScreenPipelines : _screenPipelines)[ScreenPipelineIndex(depthTest, blend, depthWrite, additive)]
+                             : (_worldActive ? _worldShapePipelines : _shapePipelines)[ScreenPipelineIndex(depthTest, blend, depthWrite)];
     if (!pipeline)
         CreateShapePipeline(blend, screen, depthTest, depthWrite, shadow, additive);
     const double lightingStart = _profile.enabled ? ProfileClock() : 0;
@@ -392,8 +393,16 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
         _commands.indexType = indexType;
         if (_profile.enabled) ++_profile.stateCommands[4];
     }
-    const VkViewport viewport{0, 0, float(_extent.width), float(_extent.height), 0, 1};
-    const VkRect2D scissor = clip ? *clip : VkRect2D{{0, 0}, _extent};
+    const auto size = RenderExtent();
+    const VkViewport viewport{0, 0, float(size.width), float(size.height), 0, 1};
+    VkRect2D scissor = clip ? *clip : VkRect2D{{0, 0}, size};
+    if (clip && _worldActive) {
+        const int right = int((uint64_t(clip->offset.x + clip->extent.width) * size.width + _extent.width-1)/_extent.width);
+        const int bottom = int((uint64_t(clip->offset.y + clip->extent.height) * size.height + _extent.height-1)/_extent.height);
+        scissor.offset.x = int(int64_t(clip->offset.x)*size.width/_extent.width);
+        scissor.offset.y = int(int64_t(clip->offset.y)*size.height/_extent.height);
+        scissor.extent = {uint32_t(right-scissor.offset.x),uint32_t(bottom-scissor.offset.y)};
+    }
     if (!_commands.viewportValid || std::memcmp(&_commands.viewport, &viewport, sizeof(viewport)) != 0)
     {
         vkCmdSetViewport(frame.command, 0, 1, &viewport);
@@ -412,7 +421,7 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     std::copy(mvp.begin(), mvp.end(), constants.begin());
     std::copy(color.begin(), color.end(), constants.begin() + 16);
     constants[20] = alphaCutoff;
-    // Offset 21 is retained as padding in the existing Shape push layout.
+    constants[21] = _worldActive && _worldSamples != VK_SAMPLE_COUNT_1_BIT && !blend && !shadow ? 1.f : 0.f;
     constants[22] = detail ? secondaryMode : 0;
     constants[23] = shadow ? 1.f : 0.f;
     std::copy(lightDirection.begin(), lightDirection.end(), constants.begin() + 24);

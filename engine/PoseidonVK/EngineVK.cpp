@@ -177,6 +177,7 @@ void EngineVK::BeginWorldEffects(bool enabled)
     {
         const auto& p = GScene->GetCamera()->ProjectionNormal();
         _worldProjection = {p(0, 0), p(1, 1), p(2, 2), p.Position().Z()};
+        _vk.BeginAAWorld();
     }
     else
         _worldEffectsPending = false;
@@ -188,7 +189,7 @@ void EngineVK::FinishWorldEffects()
     if (!_worldEffectsPending)
         return;
     _worldEffectsPending = false;
-    _vk.DrawSSAO(_worldProjection);
+    _vk.FinishAAWorld(_worldProjection);
 }
 
 bool EngineVK::SetSSAO(bool enabled, float strength, float radius, float bias, float fade)
@@ -202,6 +203,7 @@ void EngineVK::FinishDraw()
         return;
     try
     {
+        FinishWorldEffects();
         _vk.EndFrame();
         Engine::FinishDraw();
     }

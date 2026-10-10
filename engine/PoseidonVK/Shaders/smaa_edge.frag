@@ -1,0 +1,11 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "smaa_common.glsl"
+layout(set=0, binding=0) uniform sampler2D source;
+layout(location=0) in vec2 texCoord;
+layout(location=0) out vec4 outColor;
+void main() {
+    vec4 offset[3];
+    SMAAEdgeDetectionVS(texCoord, offset);
+    outColor = vec4(SMAAColorEdgeDetectionPS(texCoord, offset, source), 0, 0);
+}

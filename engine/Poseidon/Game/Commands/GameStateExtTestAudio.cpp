@@ -53,6 +53,16 @@
 #include <Poseidon/Foundation/platform.hpp>
 
 using namespace Poseidon;
+static GameValue TriAA(const GameState*, GameValuePar arg)
+{
+    return GameValue(GEngine ? GEngine->SetAntiAliasing(RString(arg)) : RString("UNSUPPORTED: no renderer"));
+}
+static GameValue TriRenderScale(const GameState*, GameValuePar arg)
+{
+    const float value = arg;
+    return GameValue(GEngine && std::isfinite(value) && (value == 100 || value == 125 || value == 150 || value == 200) &&
+                     GEngine->SetWorldRenderScale(int(value)));
+}
 // Optional backend feature; GL33 returns false and remains unchanged.
 static GameValue TriSSAO(const GameState*, GameValuePar arg)
 {
@@ -3062,6 +3072,8 @@ INIT_MODULE(GameStateExtTest, 3)
     GGameState.NewFunction(GameFunction(GameString, "triTeleportPlayerTo", TriTeleportPlayerTo, GameArray));
     GGameState.NewFunction(GameFunction(GameString, "triSetView", TriSetView, GameArray));
     GGameState.NewFunction(GameFunction(GameBool, "triSSAO", TriSSAO, GameArray));
+    GGameState.NewFunction(GameFunction(GameString, "triAA", TriAA, GameString));
+    GGameState.NewFunction(GameFunction(GameBool, "triRenderScale", TriRenderScale, GameScalar));
     GGameState.NewFunction(GameFunction(GameString, "triSetPlayerFaceView", TriSetPlayerFaceView, GameArray));
     GGameState.NewFunction(GameFunction(GameString, "triSetRoleFaceView", TriSetRoleFaceView, GameArray));
     GGameState.NewFunction(GameFunction(GameString, "triRoleFaceTexture", TriRoleFaceTexture, GameScalar));

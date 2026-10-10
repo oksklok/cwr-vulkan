@@ -376,6 +376,8 @@ class Engine : public IGraphicsEngine
     // Optional backend post-effect boundary, before cockpit/HUD/map composition.
     virtual void BeginWorldEffects(bool /*enabled*/) {}
     virtual void FinishWorldEffects() {}
+    virtual RString SetAntiAliasing(RString) { return "UNSUPPORTED: renderer has no AA selector"; }
+    virtual bool SetWorldRenderScale(int) { return false; }
     virtual bool SetSSAO(bool, float, float, float, float) { return false; }
     virtual void NextFrame();                             // swap frames - get ready for next frame
     virtual bool InitDrawDone() { return true; }

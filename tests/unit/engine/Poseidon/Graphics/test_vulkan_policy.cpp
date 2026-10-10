@@ -346,6 +346,20 @@ int main()
         CheckThrows<std::logic_error>([&] { context.DrawDiagnosticTriangle(); },
                                       "indexed draw must require an acquired recording frame");
         Check(!context.Instance() && !context.FrameOpen(), "context must start empty");
+        Check(context.SetAntiAliasing("status").find("active=off requested=off scale=100") == 0, "AA is opt-in");
+        Check(context.SetAntiAliasing("fxaa").find("OK:") == 0, "queue FXAA selection");
+        const auto requested = context.SetAntiAliasing("status");
+        Check(context.SetAntiAliasing("msaa8").find("UNSUPPORTED:") == 0, "unsupported samples fail explicitly");
+        Check(context.SetAntiAliasing("taa").find("UNSUPPORTED:") == 0, "no fake temporal AA fallback");
+        Check(context.SetAntiAliasing("status") == requested, "failed AA selections retain previous request");
+        Check(context.SetAntiAliasing("smaa+taa").find("INVALID:") == 0, "no implicit stacking");
+        Check(!context.SetRenderScale(150), "scale needs a device before limits query");
+        for (int scale : {100,125,150,200}) Check(ValidRenderScale(scale), "supported render scale");
+        Check(!ValidRenderScale(99) && !ValidRenderScale(201), "reject unbounded render scales");
+        const auto scaled = ScaledExtent({1921,1081},125);
+        Check(scaled.width==2402 && scaled.height==1352, "odd drawable fractional scale rounds up");
+        Check(AASamples(AAMode::MSAA2)==VK_SAMPLE_COUNT_2_BIT && AASamples(AAMode::MSAA4)==VK_SAMPLE_COUNT_4_BIT &&
+              AASamples(AAMode::MSAA8)==VK_SAMPLE_COUNT_8_BIT, "real MSAA sample counts");
         Check(context.SwapInterval() == 1, "vsync starts enabled");
         context.SetSwapInterval(-1);
         Check(context.SwapInterval() == -1, "adaptive interval can be requested before device setup");

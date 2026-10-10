@@ -1,6 +1,7 @@
 #include <PoseidonVK/VulkanContext.hpp>
 #include <PoseidonVK/Shaders/gamma.vert.hpp>
 #include <PoseidonVK/Shaders/ssao.frag.hpp>
+#include <PoseidonVK/Shaders/ssao_ms.frag.hpp>
 #include <cmath>
 #include <stdexcept>
 
@@ -138,6 +139,13 @@ void VulkanContext::CreateSSAOResources(VkFormat format)
         pipeline.layout = _ssaoLayout;
         pipeline.renderPass = _ssaoPass;
         Require(vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &_ssaoPipeline), "create pipeline");
+        vkDestroyShaderModule(_device, fragment, nullptr);
+        fragment = VK_NULL_HANDLE;
+        shader.codeSize = sizeof(Cwrssao_ms_frag);
+        shader.pCode = Cwrssao_ms_frag;
+        Require(vkCreateShaderModule(_device, &shader, nullptr, &fragment), "create multisample depth shader");
+        stages[1].module = fragment;
+        Require(vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &_ssaoMSPipeline), "create multisample AO pipeline");
     }
     catch (...)
     {
@@ -162,6 +170,7 @@ void VulkanContext::DrawSSAO(const std::array<float, 4>& projection)
     auto& frame = _frames[_frame];
     const auto command = frame.command;
     vkCmdEndRenderPass(command);
+    if (_worldActive) _worldPassOpen = false;
     if (frame.ssaoQueries)
     {
         vkCmdResetQueryPool(command, frame.ssaoQueries, 0, 2);
@@ -170,14 +179,16 @@ void VulkanContext::DrawSSAO(const std::array<float, 4>& projection)
     _commands = {};
     VkRenderPassBeginInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     pass.renderPass = _ssaoPass;
-    pass.framebuffer = _gammaTargets[_image].ssaoFramebuffer;
-    pass.renderArea.extent = _extent;
+    pass.framebuffer = _worldActive ? _aaTargets[_image].ao : _gammaTargets[_image].ssaoFramebuffer;
+    const auto size = RenderExtent();
+    pass.renderArea.extent = size;
     vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, _ssaoPipeline);
+    vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        _worldActive && _worldSamples != VK_SAMPLE_COUNT_1_BIT ? _ssaoMSPipeline : _ssaoPipeline);
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, _ssaoLayout, 0, 1,
-                            &_gammaTargets[_image].depthSet, 0, nullptr);
-    const VkViewport viewport{0, 0, float(_extent.width), float(_extent.height), 0, 1};
-    const VkRect2D scissor{{0, 0}, _extent};
+                            _worldActive ? &_aaTargets[_image].depthSet : &_gammaTargets[_image].depthSet, 0, nullptr);
+    const VkViewport viewport{0, 0, float(size.width), float(size.height), 0, 1};
+    const VkRect2D scissor{{0, 0}, size};
     vkCmdSetViewport(command, 0, 1, &viewport);
     vkCmdSetScissor(command, 0, 1, &scissor);
     const std::array<float, 8> push{projection[0], projection[1], projection[2], projection[3],
@@ -190,9 +201,11 @@ void VulkanContext::DrawSSAO(const std::array<float, 4>& projection)
         vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, frame.ssaoQueries, 1);
         frame.ssaoTimestamped = true;
     }
-    pass.renderPass = _resumePass;
-    pass.framebuffer = _framebuffers[_image];
-    vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+    if (!_worldActive) {
+        pass.renderPass = _resumePass;
+        pass.framebuffer = _framebuffers[_image];
+        vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
+    }
     if (_profile.enabled)
     {
         _profile.ssaoMs += ProfileClock() - start;
@@ -208,6 +221,8 @@ void VulkanContext::DestroySSAOResources() noexcept
         target.ssaoFramebuffer = VK_NULL_HANDLE;
     }
     if (_ssaoPipeline) vkDestroyPipeline(_device, _ssaoPipeline, nullptr);
+    if (_ssaoMSPipeline) vkDestroyPipeline(_device, _ssaoMSPipeline, nullptr);
+    _ssaoMSPipeline = VK_NULL_HANDLE;
     if (_ssaoLayout) vkDestroyPipelineLayout(_device, _ssaoLayout, nullptr);
     if (_ssaoPass) vkDestroyRenderPass(_device, _ssaoPass, nullptr);
     _ssaoPipeline = VK_NULL_HANDLE;

@@ -341,9 +341,9 @@ void VulkanContext::RenderShadowDepth(const float* matrices, int count, int reso
         ++_profile.csmPasses;
         _profile.csmVertices += solid.size() / 3 + alpha.size() / 5;
     }
-    pass.renderPass = _resumePass;
-    pass.framebuffer = _framebuffers[_image];
-    pass.renderArea.extent = _extent;
+    pass.renderPass = ResumePass();
+    pass.framebuffer = SceneFramebuffer();
+    pass.renderArea.extent = RenderExtent();
     pass.clearValueCount = 0;
     pass.pClearValues = nullptr;
     vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);

@@ -4,6 +4,7 @@
 #include <PoseidonVK/BufferVK.hpp>
 #include <PoseidonVK/ShapeLightingData.hpp>
 #include <PoseidonVK/ScreenBatchVK.hpp>
+#include <PoseidonVK/AntiAliasingVK.hpp>
 #include <array>
 #include <atomic>
 #include <string>
@@ -142,6 +143,10 @@ class VulkanContext
     bool SetSSAO(bool enabled, float strength, float radius, float bias, float fade);
     bool SSAOEnabled() const { return _ssaoEnabled; }
     void DrawSSAO(const std::array<float, 4>& projection);
+    std::string SetAntiAliasing(std::string_view mode);
+    bool SetRenderScale(int percent);
+    void BeginAAWorld();
+    void FinishAAWorld(const std::array<float, 4>& projection);
     bool FrameOpen() const { return _frameOpen; }
     VkExtent2D Extent() const { return _extent; }
     const std::string& DeviceName() const { return _deviceName; }
@@ -189,6 +194,8 @@ class VulkanContext
         double recordMs = 0, geometryMs = 0, textureMs = 0, fenceMs = 0, retireMs = 0, acquireMs = 0, presentMs = 0;
         double commandStart = 0, commandMs = 0, submitMs = 0, retentionMs = 0, bindingMs = 0;
         double ssaoMs = 0, ssaoGpuMs = 0;
+        double gpuMs = 0;
+        uint64_t gpuSamples = 0;
         uint64_t ssaoPasses = 0, ssaoGpuSamples = 0;
         double csmGpuMs = 0;
         uint64_t csmPasses = 0, csmGpuSamples = 0, csmVertices = 0;
@@ -227,6 +234,8 @@ class VulkanContext
         VkSemaphore acquired = VK_NULL_HANDLE;
         VkFence submitted = VK_NULL_HANDLE;
         VkQueryPool ssaoQueries = VK_NULL_HANDLE;
+        VkQueryPool frameQueries = VK_NULL_HANDLE;
+        bool frameTimestamped = false;
         bool ssaoTimestamped = false;
         VkQueryPool csmQueries = VK_NULL_HANDLE;
         bool csmTimestamped = false;
@@ -297,6 +306,42 @@ class VulkanContext
         VkDeviceMemory memory = VK_NULL_HANDLE;
         VkImageView view = VK_NULL_HANDLE;
     };
+    struct AATarget
+    {
+        DepthAttachment color, depth, multisample, edges, weights, filtered;
+        VkImageView sampledDepth = VK_NULL_HANDLE;
+        VkDescriptorSet colorSet = VK_NULL_HANDLE, depthSet = VK_NULL_HANDLE;
+        VkDescriptorSet edgesSet = VK_NULL_HANDLE, weightsSet = VK_NULL_HANDLE, filteredSet = VK_NULL_HANDLE;
+        VkFramebuffer scene = VK_NULL_HANDLE, ao = VK_NULL_HANDLE;
+        VkFramebuffer edgeFB = VK_NULL_HANDLE, weightFB = VK_NULL_HANDLE, filterFB = VK_NULL_HANDLE;
+    };
+    AAMode _aaMode = AAMode::Off, _requestedAA = AAMode::Off;
+    int _renderScale = 100, _requestedScale = 100;
+    VkSampleCountFlags _aaSampleSupport = VK_SAMPLE_COUNT_1_BIT;
+    VkSampleCountFlagBits _worldSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkExtent2D _worldExtent{};
+    bool _worldActive = false, _worldPassOpen = false;
+    std::vector<AATarget> _aaTargets;
+    VkRenderPass _worldPass = VK_NULL_HANDLE, _worldResume = VK_NULL_HANDLE, _aaPass = VK_NULL_HANDLE, _aaDataPass = VK_NULL_HANDLE;
+    VkDescriptorPool _aaPool = VK_NULL_HANDLE;
+    VkDescriptorSet _smaaAreaSet = VK_NULL_HANDLE, _smaaSearchSet = VK_NULL_HANDLE;
+    VkPipelineLayout _aaLayout = VK_NULL_HANDLE;
+    VkSampler _aaSampler = VK_NULL_HANDLE;
+    // FXAA, SMAA edge/weights/neighborhood, world composite.
+    std::array<VkPipeline, 5> _aaPipelines{};
+    std::shared_ptr<TextureImage> _smaaArea, _smaaSearch;
+    std::array<VkPipeline, 8> _worldShapePipelines{};
+    std::array<VkPipeline, 16> _worldScreenPipelines{};
+    std::array<VkPipeline, 2> _worldShadowPipelines{};
+    VkPipeline _ssaoMSPipeline = VK_NULL_HANDLE;
+    VkExtent2D RenderExtent() const { return _worldActive ? _worldExtent : _extent; }
+    VkFramebuffer SceneFramebuffer() const { return _worldActive ? _aaTargets[_image].scene : _framebuffers[_image]; }
+    VkRenderPass ResumePass() const { return _worldActive ? _worldResume : _resumePass; }
+    void CreateAAResources(VkFormat format);
+    void DestroyAAResources() noexcept;
+    void CreateAAImage(DepthAttachment& image, VkFormat format, VkImageUsageFlags usage,
+                       VkSampleCountFlagBits samples, VkImageAspectFlags aspect);
+    void DrawAAPass(unsigned index, VkFramebuffer framebuffer, VkDescriptorSet source, VkExtent2D extent);
     std::vector<DepthAttachment> _depth;
     std::vector<VkImageView> _sampledDepthViews; // Depth only; attachment views retain stencil for shadows.
     // Same format/extent as the swapchain: keep the existing blend/color-space

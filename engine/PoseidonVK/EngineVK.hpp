@@ -29,6 +29,8 @@ class EngineVK final : public Engine
     void FinishDraw() override;
     void BeginWorldEffects(bool enabled) override;
     void FinishWorldEffects() override;
+    RString SetAntiAliasing(RString mode) override { return _vk.SetAntiAliasing(static_cast<const char*>(mode)).c_str(); }
+    bool SetWorldRenderScale(int percent) override { return _vk.SetRenderScale(percent); }
     bool SetSSAO(bool enabled, float strength, float radius, float bias, float fade) override;
     bool InitDrawDone() override { return _vk.FrameOpen(); }
     bool IsAbleToDraw() override { return !_failed && !_paused && IsOpen(); }

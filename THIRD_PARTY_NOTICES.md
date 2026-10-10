@@ -567,3 +567,12 @@ at build time.
   §2. Verbatim per-project headers remain in each upstream package.
 - This file documents third-party components only. The project's own code remains
   under GPL-3.0-or-later with the Section 7 additional terms in [`LICENSE`](LICENSE).
+
+## Vulkan anti-aliasing references
+
+The optional Vulkan backend includes SMAA by Jorge Jimenez, Jose I. Echevarria,
+Belen Masia, Fernando Navarro and Diego Gutierrez (MIT), and NVIDIA FXAA 3.11
+(BSD 3-clause). Copyright, permission and disclaimer text is retained in
+`engine/PoseidonVK/ThirdParty/SMAA/LICENSE.txt` and
+`engine/PoseidonVK/ThirdParty/FXAA/Fxaa3_11.h`. See the adjacent README for
+provenance, configuration and local adaptations.

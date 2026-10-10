@@ -1,5 +1,18 @@
 #version 450
+#ifdef MULTISAMPLE_DEPTH
+layout(set = 0, binding = 0) uniform sampler2DMS sceneDepth;
+ivec2 depthSize() { return textureSize(sceneDepth); }
+float readDepth(vec2 uv) {
+    ivec2 p = clamp(ivec2(uv*depthSize()),ivec2(0),depthSize()-1);
+    float d = 1;
+    for (int i=0;i<textureSamples(sceneDepth);++i) d=min(d,texelFetch(sceneDepth,p,i).r);
+    return d;
+}
+#else
 layout(set = 0, binding = 0) uniform sampler2D sceneDepth;
+ivec2 depthSize() { return textureSize(sceneDepth,0); }
+float readDepth(vec2 uv) { return texture(sceneDepth,uv).r; }
+#endif
 layout(location = 0) in vec2 texCoord;
 layout(location = 0) out vec4 outColor;
 layout(push_constant) uniform AO {
@@ -8,18 +21,18 @@ layout(push_constant) uniform AO {
 } ao;
 
 vec3 positionAt(vec2 uv) {
-    float depth = texture(sceneDepth, uv).r;
+    float depth = readDepth(uv);
     float z = ao.projection.w / (depth - ao.projection.z);
     return vec3((uv * 2.0 - 1.0) * vec2(1.0, -1.0) / ao.projection.xy * z, z);
 }
 
 void main() {
     outColor = vec4(1.0);
-    float depth = texture(sceneDepth, texCoord).r;
+    float depth = readDepth(texCoord);
     if (depth >= 0.999999 || depth <= 0.0) return;
     vec3 p = positionAt(texCoord);
     if (p.z <= 0.0 || p.z >= ao.settings.w) return;
-    vec2 pixel = 1.0 / vec2(textureSize(sceneDepth, 0));
+    vec2 pixel = 1.0 / vec2(depthSize());
     // Use the nearer derivative on each axis, avoiding silhouette normals
     // that bridge a foreground object and distant background.
     vec3 l = positionAt(texCoord - vec2(pixel.x, 0));

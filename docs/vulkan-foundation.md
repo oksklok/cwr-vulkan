@@ -1,5 +1,195 @@
 # Vulkan backend development
 
+## Optional spatial anti-aliasing and world render scale (2026-10-11)
+
+**Partial roster, not a complete temporal-AA suite:** Off (default), FXAA,
+SMAA 1x and MSAA 2x/4x/8x are implemented. Independent world render scales are
+100% (default), 125%, 150% and 200%. TAA is **unsupported**. Vulkan remains
+opt-in; GL33 rendering, assets, localization and gameplay behavior are unchanged.
+There is no graphics menu, upscaler, dynamic resolution or AA stacking.
+
+Developer evaluator commands (process-local, not persisted):
+
+```sqf
+triAA "off"       // also "fxaa", "smaa", "msaa2", "msaa4", "msaa8"
+triRenderScale 150
+triAA "status"    // actual/requested mode, actual/requested scale, sample mask
+```
+
+Mode changes report `OK` and take effect at the next frame's existing
+idle/recreation boundary. Unsupported sample counts return `UNSUPPORTED` and
+retain the previous selection; they never silently become a different mode.
+Invalid scales return false. `triAA "taa"` reports its missing motion-history
+contract. GL33 reports unsupported for these commands. Capabilities intersect
+the exact color and sampled depth/stencil image formats with device framebuffer
+and sampled-depth sample-count limits. The RTX 4060 Ti reports 1/2/4/8 support.
+
+### Rendering and algorithms
+
+The existing `BeginWorldEffects` / `FinishWorldEffects` boundary brackets a
+separate world target only when AA or render scale requires one. Landscape,
+sky, native objects, software TL terrain, transparency, water, fog, projected
+shadows and rain complete there. SSAO reads that world's depth. AA/downsampling
+then composite world color and depth into the original native-resolution scene
+target before cockpit/weapon draws, HUD, map labels and menus. Gamma still runs
+once on the completed frame, including overlays. Off at 100% uses the original
+scene attachments without a world copy or AA images.
+
+- FXAA uses NVIDIA FXAA 3.11's complete PC quality path, preset 29, 0.5 subpixel
+  filtering, 0.125 contrast and 0.0312 dark thresholds. RGB luma is calculated at
+  the reference fetch sites to include chromatic edges without a luma-copy pass.
+- SMAA 1x uses the upstream HIGH preset with color-edge detection, blending
+  weights (including diagonal/corner detection), and neighborhood blending.
+  Original area/search table bytes are embedded, losslessly expanded through
+  the existing texture uploader, and sampled bilinearly without anisotropy.
+  Edge/weight targets are zero-cleared UNORM images. See
+  [reference provenance and licenses](../engine/PoseidonVK/ThirdParty/README.md).
+- MSAA uses real 2/4/8-sample color and depth/stencil attachments, Vulkan color
+  resolves and per-sample projected-shadow stencil tests. Opaque cutout world
+  materials use derivative-scaled alpha-to-coverage around the existing cutoff;
+  blended smoke, glass and water keep their ordinary blend paths. Sampled depth
+  uses a minimum-sample resolve in the shader for SSAO and subsequent depth
+  composition. This avoids requiring a newer depth-resolve extension.
+- Supersampling integrates the exact source-pixel area of each output pixel,
+  including fractional 125/150% footprints. It uses actual rounded-up scaled
+  dimensions, not a larger window. Depth conservatively takes the nearest
+  covered surface; cockpit depth clears retain their original ordering.
+
+World stencil stays attached throughout world drawing and CSM interruptions;
+it is not filtered or used as AA scratch. After the world boundary no projected
+shadow pass consumes it. Native-resolution overlay stencil retains its own clear
+value. SSAO modulates the resolved world color after the final multisample pass,
+so a later resolve cannot overwrite AO. CSM resumes the correct world target
+and sample-count pipeline bank. Every boundary invalidates cached draw bindings.
+FXAA and SMAA at 100% write directly into the native scene, avoiding an extra
+full-frame copy; scaled post-AA uses one reusable intermediate before downsampling.
+All target resources follow swapchain lifetime; nothing is allocated per frame.
+
+### TAA blocker and limitations
+
+There is no TAA implementation or hidden frame-blending substitute. Native
+`PrepareMeshTL` receives a current model transform, and `BeginMeshTL` a shared
+Shape, not a stable rendered-object instance identity. The latter uploads current animated
+vertices; software `BeginMesh` receives an already transformed/clipped transient
+TL table. Neither stream carries previous deformed positions or stable clipped
+vertex correspondence. Recovering world positions from depth would cover camera
+motion and static terrain, but would incorrectly reproject moving vehicles,
+soldiers, animated foliage and newly exposed surfaces. Shape/buffer addresses
+cannot distinguish multiple instances, LOD changes or recycled transient pages.
+
+A correct TAA implementation therefore needs persistent instance identity,
+previous transforms/deformation before clipping, motion/reactivity output for
+both geometry routes, and scene/save-load/view discontinuity generations across
+the scene-to-renderer boundary. Those contracts are absent from this renderer.
+Adding camera jitter and accumulation alone would violate the moving-object
+requirement, so TAA and SMAA+TAA are explicitly unavailable. This requested part
+remains unfinished.
+
+Spatial AA reduces visible stair steps but cannot provide temporal stability.
+Fine foliage and thin geometry can still shimmer in motion; MSAA does not
+supersample texture/shader evaluation. Supersampling is costlier and can soften
+texture detail. Cockpit and weapon edges deliberately remain native and unfiltered.
+Qualification is on the normal Windows UNORM swapchain; other GPUs and the sRGB
+surface fallback are unqualified. Mode/scale changes reuse the existing
+device-idle recreation and can hitch while pipelines/resources are rebuilt.
+
+### Verification and performance
+
+Both Vulkan-enabled and GL33-only RelWithDebInfo builds pass. Each configuration
+passes the existing `[vulkan-shape],[ShadowMath],[Conventions],[ShutdownOrder]`
+suite (71 cases, 799 assertions). The driver-free Vulkan executable passes 309
+checks, including new opt-in defaults, unsupported-mode retention, bounded
+scale selection and odd-sized fractional extents. Its intentional teardown-error
+fixture is not a live validation failure.
+
+Live qualification used stock missions, isolated profiles, exact-window input,
+1920x1080 and NVIDIA RTX 4060 Ti / driver 617.14. Developer commands positioned
+the player and froze simulation for matched still comparisons; motion checks
+then restored simulation. These are bounded movement sequences with screenshots
+and position/ammunition evidence, not a continuous-video temporal-quality study.
+
+| Stock scene | Live checks |
+| --- | --- |
+| Infantry / Ambush village | Off, FXAA, SMAA and all three MSAA counts; foliage, fences, rooftops, moving soldier; all four scales; SSAO + CSM; shoreline water/fog and camera transition |
+| HMMWV | All modes driving (about 56 m total displacement); external and native cockpit; SMAA at 200% |
+| Heavy Metal / M1 Abrams | All modes driving with SSAO + CSM; gunner optics and cannon fire, confirmed ammunition 24 to 23 |
+| Ground Attack / Cobra | All modes in cockpit and actual flight (altitude above 30 m); external transition with SMAA at 150%; SSAO + CSM |
+| Shadow Killer | All modes at night and under NVG, movement, native reticle/text/weapon; firing confirmed 30 to 29; MSAA 8x + 200% resize/minimize/restore |
+
+Final spatial-code qualification runs `aa-q-infantry`, `aa-q-hmmwv`, `aa-q-tank`,
+`aa-q-air` and `aa-q-night` all closed normally with exit 0 and **zero validation
+errors or warnings**, including synchronization validation. The night and final
+infantry runs also contain the final acquire-excluded GPU profiler. Earlier
+`aa-final-infantry` includes map-label comparisons and SMAA + 150% resize/restore.
+Local PNGs, action receipts, executable hashes and complete validation logs are
+under ignored `build/shadow-live/aa-*`; they are not shipped as stock assets.
+
+The final interface-name-only rebuild also passed `aa-menu-save` with profiling
+disabled (the normal semaphore wait path): all modes in menus and moving stock
+Ambush gameplay, briefing/map UI, and ordinary Save/Load with SMAA at 150%.
+Loading restored `[8089.76,5153.36,0.00552177]` after movement; TAA and scale 99
+requests left that active selection unchanged. Shutdown reported 19,671 frames,
+zero validation errors/warnings and exit 0. Both final configurations launched
+GL33 by default without `--render`; the new commands reported unsupported and
+both exited normally (`aa-default-vkbuild`, `aa-default-glbuild`).
+
+Visual review found reduced stair steps on rooftops, fences and silhouettes.
+SMAA preserves more local texture contrast than FXAA; MSAA coverage smooths
+cutout boundaries without applying a texture-wide post-filter. Fractional and
+200% downsampling reduce fine-detail aliasing but cost more. HUD, map text,
+cockpit instruments and weapon overlays remain sharp/native. No missing world,
+stencil-shadow leak, broken water/NVG, or overlay filtering was observed in
+these runs. This is not a claim of shimmer-free motion: spatial modes have no
+history, and distant leaves/wires can still pop or sparkle. There is no TAA
+ghosting result because TAA does not exist in this implementation.
+
+The physical device supports every requested MSAA count. Unsupported-count
+behavior is covered by the driver-free test (explicit rejection and previous
+selection retention), **not** a second physical GPU or a forced driver failure.
+
+GPU profiling is opt-in via the existing `CWR_VK_PROFILE` environment variable.
+Two timestamps enclose the frame's GPU commands, including gamma. In profiling
+mode only, the acquire-semaphore wait is moved to TOP_OF_PIPE so the starting
+timestamp does not include waiting for the display's image. Results are read
+after the existing frame fence, without an additional wait. Normal rendering
+keeps its original late semaphore wait. This is an elapsed GPU command interval,
+not an isolated shader-throughput measurement or a CPU/display frame time.
+
+The matched village benchmark uses `[7088,6067,0]`, direction 90, external view,
+16:00 clear weather, view distance 900, frozen simulation, projected shadows,
+CSM off and SSAO off. Validation is disabled for timing. `aa-perf-infantry`
+contains two 12-second sweeps with normal VSync. `aa-perf-unpaced` contains two
+20-second sweeps requesting `triSetVsync 0`; despite the directory name and
+mailbox selection, measured presentation remains around 162 FPS / 6.17 ms.
+The configured CPU cap is 240, not the measured 162. No driver/global settings
+or power plan were changed.
+
+Timing statistics below use the second run, discarding the first two two-second
+report windows after each mode/scale transition. Ranges are the retained window
+means, not per-frame minima/maxima. Automatic GPU clocks varied from roughly
+495 to 1950 MHz during sampling. **A fixed-clock incremental GPU cost is not
+established by this experiment.** In particular, negative median differences
+for lightweight modes must not be interpreted as AA speeding up rendering.
+
+| Mode / scale | Median GPU ms | GPU window range ms | Median difference vs Off/100 ms (clock-confounded) |
+| --- | ---: | ---: | ---: |
+| Off / 100% | 1.763 | 1.416–1.803 | baseline |
+| FXAA / 100% | 1.442 | 0.669–2.148 | -0.321; unresolved cost |
+| SMAA 1x / 100% | 1.580 | 0.889–2.086 | -0.182; unresolved cost |
+| MSAA 2x / 100% | 1.767 | 1.247–1.790 | +0.004; within variation |
+| MSAA 4x / 100% | 1.868 | 1.219–1.869 | +0.106 |
+| MSAA 8x / 100% | 1.998 | 1.453–2.019 | +0.236 |
+| Off / 125% | 1.782 | 1.253–1.815 | +0.019; within variation |
+| Off / 150% | 1.853 | 1.239–1.856 | +0.090 |
+| Off / 200% | 1.980 | 1.363–1.981 | +0.217 |
+
+Each row retains 16–18 report windows / 5,187–5,815 submitted frames. CPU/display
+frame medians remain 6.173–6.178 ms across the table. These scene-specific results
+are not a maximum-quality worst-case budget; combining MSAA, 200%, SSAO and CSM
+was exercised for correctness, not exhaustively benchmarked. Reliable fixed-clock
+incremental comparisons, other GPUs and a continuous-video motion study remain
+unqualified.
+
 ## Optional Vulkan cascaded sunlight shadows (2026-10-11)
 
 CSM remains **off by default**. The existing `triEnableShadowMaps` and

@@ -339,6 +339,7 @@ void VulkanContext::CreateFrameResources()
             queries.queryType = VK_QUERY_TYPE_TIMESTAMP;
             queries.queryCount = 2;
             Check(vkCreateQueryPool(_device, &queries, nullptr, &frame.ssaoQueries), "create AO timestamps");
+            Check(vkCreateQueryPool(_device, &queries, nullptr, &frame.frameQueries), "create frame GPU timestamps");
             Check(vkCreateQueryPool(_device, &queries, nullptr, &frame.csmQueries), "create CSM timestamps");
         }
         const auto prefix = "PoseidonVK frame " + std::to_string(i);
@@ -350,6 +351,7 @@ void VulkanContext::CreateFrameResources()
 
 void VulkanContext::DestroySwapchain() noexcept
 {
+    DestroyAAResources();
     _commands = {};
     for (auto& pipeline : _shadowPipelines)
     {
@@ -579,6 +581,7 @@ bool VulkanContext::RecreateSwapchain(uint32_t width, uint32_t height)
     }
     CreateGammaPass(format.format);
     CreateSSAOResources(format.format);
+    CreateAAResources(format.format);
     _recreate = false;
     std::fprintf(stderr, "Vulkan: swapchain #%u ready: %ux%u, %zu images, format=%d, present mode=%d\n",
                  ++_swapchainGeneration, _extent.width, _extent.height, _images.size(), format.format,
@@ -624,6 +627,18 @@ bool VulkanContext::BeginFrame(uint32_t width, uint32_t height)
     if (_profile.enabled)
         _profile.fenceMs += fenceEnd - _profile.frameStart;
     // Read only after this slot's existing fence; never wait just for profiling.
+    if (frame.frameTimestamped)
+    {
+        uint64_t stamps[2]{};
+        if (vkGetQueryPoolResults(_device, frame.frameQueries, 0, 2, sizeof(stamps), stamps,
+                                 sizeof(uint64_t), VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
+        {
+            const uint64_t mask = _timestampBits == 64 ? UINT64_MAX : (uint64_t(1) << _timestampBits) - 1;
+            _profile.gpuMs += double((stamps[1]-stamps[0]) & mask)*_timestampPeriod/1e6;
+            ++_profile.gpuSamples;
+        }
+        frame.frameTimestamped = false;
+    }
     if (frame.ssaoTimestamped)
     {
         uint64_t stamps[2]{};
@@ -684,6 +699,11 @@ bool VulkanContext::BeginFrame(uint32_t width, uint32_t height)
     VkCommandBufferBeginInfo commands{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     commands.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     Check(vkBeginCommandBuffer(frame.command, &commands), "begin frame command buffer");
+    if (frame.frameQueries)
+    {
+        vkCmdResetQueryPool(frame.command, frame.frameQueries, 0, 2);
+        vkCmdWriteTimestamp(frame.command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, frame.frameQueries, 0);
+    }
     VkClearValue clears[2]{};
     clears[0].color.float32[3] = 1.0f;
     clears[1].depthStencil.depth = 1.0f;
@@ -710,7 +730,7 @@ void VulkanContext::Clear(float r, float g, float b, float a)
     attachment.colorAttachment = 0;
     attachment.clearValue.color = {{r, g, b, a}};
     VkClearRect rect{};
-    rect.rect.extent = _extent;
+    rect.rect.extent = RenderExtent();
     rect.layerCount = 1;
     vkCmdClearAttachments(_frames[_frame].command, 1, &attachment, 1, &rect);
 }
@@ -724,7 +744,7 @@ void VulkanContext::ClearDepth()
     attachment.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
     attachment.clearValue.depthStencil.depth = 1.0f;
     VkClearRect rect{};
-    rect.rect.extent = _extent;
+    rect.rect.extent = RenderExtent();
     rect.layerCount = 1;
     vkCmdClearAttachments(_frames[_frame].command, 1, &attachment, 1, &rect);
 }
@@ -742,7 +762,7 @@ void VulkanContext::BeginShadowPass()
     VkClearAttachment attachment{};
     attachment.aspectMask = VK_IMAGE_ASPECT_STENCIL_BIT;
     VkClearRect rect{};
-    rect.rect.extent = _extent;
+    rect.rect.extent = RenderExtent();
     rect.layerCount = 1;
     vkCmdClearAttachments(_frames[_frame].command, 1, &attachment, 1, &rect);
 }
@@ -765,10 +785,19 @@ void VulkanContext::EndFrame()
     auto& frame = _frames[_frame];
     vkCmdEndRenderPass(frame.command);
     DrawGammaPass();
+    if (frame.frameQueries)
+    {
+        vkCmdWriteTimestamp(frame.command, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, frame.frameQueries, 1);
+        frame.frameTimestamped = true;
+    }
     Check(vkEndCommandBuffer(frame.command), "end frame command buffer");
     if (_profile.enabled)
         _profile.commandMs += ProfileClock() - _profile.commandStart;
-    const VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    // Profiling starts its timestamp only AFTER acquire's semaphore, so the
+    // reported GPU interval excludes WSI/display pacing. Normal rendering keeps
+    // its original late wait and overlap; no extra semaphore or CPU wait.
+    const VkPipelineStageFlags waitStage = _profile.enabled ? VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT :
+                                                            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
     VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submit.waitSemaphoreCount = 1;
     submit.pWaitSemaphores = &frame.acquired;
@@ -852,6 +881,9 @@ void VulkanContext::ReportProfile()
         _profile.stateCommands[4] / frames, _profile.stateCommands[5] / frames,
         _profile.stateCommands[6] / frames, _profile.stateCommands[7] / frames);
     const double last = _profile.lastEnd;
+    std::fprintf(stderr, "Vulkan GPU: aa=%s scale=%d frame_ms=%.4f samples=%llu\n", AAName(_aaMode), _renderScale,
+        _profile.gpuSamples ? _profile.gpuMs/_profile.gpuSamples : -1.,
+        static_cast<unsigned long long>(_profile.gpuSamples));
     std::fprintf(stderr, "Vulkan CSM: passes/frame=%.2f vertices/frame=%.0f depth_gpu_ms/pass=%.4f gpu_samples=%llu\n",
         _profile.csmPasses / frames, _profile.csmVertices / frames,
         _profile.csmGpuSamples ? _profile.csmGpuMs / _profile.csmGpuSamples : -1.0,
@@ -891,6 +923,8 @@ unsigned VulkanContext::Shutdown() noexcept
                 texture->Destroy();
         _textures.clear();
         _whiteTexture.reset();
+        _smaaArea.reset();
+        _smaaSearch.reset();
         DestroySwapchain();
         // Immutable geometry can be shared by both frame slots; teardown follows device idle.
         DestroyBuffer(_device, _triangleIndices);
@@ -927,6 +961,8 @@ unsigned VulkanContext::Shutdown() noexcept
                 vkDestroyFence(_device, frame.submitted, nullptr);
             if (frame.ssaoQueries)
                 vkDestroyQueryPool(_device, frame.ssaoQueries, nullptr);
+            if (frame.frameQueries)
+                vkDestroyQueryPool(_device, frame.frameQueries, nullptr);
             if (frame.csmQueries)
                 vkDestroyQueryPool(_device, frame.csmQueries, nullptr);
             frame = {};
