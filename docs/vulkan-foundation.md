@@ -509,3 +509,12 @@ the GL33-only normal menu/intro was visibly inspected and closed cleanly in
 unchanged; all profiles, staged missions and screenshots are under ignored build
 directories. Next useful rendering improvement: original mip-chain upload/sampling
 to reduce visible distant-texture aliasing, then broader mission/effect coverage.
+
+## Gameplay improvement: screen states (2026-10-10)
+
+Screen draws now use four independent depth/blend pipeline keys, removing the
+no-depth opaque/blend collision regardless of creation order. Six focused Shape
+cases/46 assertions passed. RTX menu and Take the Car captures under
+`build/gameplay-live/state-*` were inspected for translucent UI/HUD, cutout
+foliage and software geometry; resize/restore and close passed, 81/71 submissions,
+zero Khronos core/synchronization validation issues through shutdown.

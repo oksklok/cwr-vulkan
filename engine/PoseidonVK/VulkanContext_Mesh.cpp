@@ -1,4 +1,5 @@
 #include <PoseidonVK/VulkanContext.hpp>
+#include <PoseidonVK/ScreenPipelineVK.hpp>
 #include <algorithm>
 #include <stdexcept>
 #include <PoseidonVK/Shaders/shape.vert.hpp>
@@ -147,7 +148,7 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         pipeline.layout = _shapeLayout;
         pipeline.renderPass = _renderPass;
         Require(vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &pipeline, nullptr,
-                                          screen        ? &_screenPipelines[depthTest ? (translucent ? 2 : 1) : 0]
+                                          screen        ? &_screenPipelines[ScreenPipelineIndex(depthTest, translucent)]
                                           : translucent ? &_blendPipeline
                                                         : &_shapePipeline),
                 "create graphics pipeline");
@@ -191,7 +192,7 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
         throw std::logic_error("Vulkan Shape: texture is not live on this device");
     if (sampler >= 8)
         throw std::out_of_range("Vulkan Shape: sampler index");
-    auto& pipeline = screen  ? _screenPipelines[depthTest ? (blend ? 2 : 1) : 0]
+    auto& pipeline = screen  ? _screenPipelines[ScreenPipelineIndex(depthTest, blend)]
                      : blend ? _blendPipeline
                              : _shapePipeline;
     if (!pipeline)

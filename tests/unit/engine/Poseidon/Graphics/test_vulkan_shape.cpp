@@ -2,9 +2,18 @@
 #include <PoseidonVK/ShapeGeometryVK.hpp>
 #include <PoseidonVK/ShapeTransformVK.hpp>
 #include <PoseidonVK/ScreenGeometryVK.hpp>
+#include <PoseidonVK/ScreenPipelineVK.hpp>
 #include <catch2/catch_approx.hpp>
 
 using namespace Poseidon;
+
+TEST_CASE("Vulkan screen pipeline keys keep every depth blend combination independent", "[Graphics][vulkan-shape]")
+{
+    REQUIRE(vk::ScreenPipelineIndex(false, false) == 0);
+    REQUIRE(vk::ScreenPipelineIndex(false, true) == 1);
+    REQUIRE(vk::ScreenPipelineIndex(true, false) == 2);
+    REQUIRE(vk::ScreenPipelineIndex(true, true) == 3);
+}
 
 TEST_CASE("Vulkan screen packing preserves pixels UV depth reciprocal W and ARGB", "[Graphics][vulkan-shape]")
 {
