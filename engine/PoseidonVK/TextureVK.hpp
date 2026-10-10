@@ -16,7 +16,7 @@ class TextureVK final : public Texture
     bool IsDynamic() const { return _dynamic; }
     int AWidth(int level = 0) const override;
     int AHeight(int level = 0) const override;
-    int ANMipmaps() const override { return 1; }
+    int ANMipmaps() const override { return int(_levels.size()); }
     int AMaxSize() const override { return std::max(_pixels.width, _pixels.height); }
     void SetMaxSize(int) override {} // Resolution hint; immutable path loads the original top mip.
     void ASetNMipmaps(int n) override;
@@ -27,7 +27,10 @@ class TextureVK final : public Texture
     bool IsTransparent() const override { return _alpha != AlphaStats::Opaque; }
     bool IsAlpha() const override { return _alpha == AlphaStats::Blend; }
     AlphaStats::Kind GetAlphaClass() override { return _alpha; }
-    bool VerifyChecksum(const MipInfo& mip) const override { return mip._texture == this && mip._level == 0; }
+    bool VerifyChecksum(const MipInfo& mip) const override
+    {
+        return mip._texture == this && mip._level >= 0 && mip._level < ANMipmaps();
+    }
     std::shared_ptr<vk::TextureImage> Image(vk::VulkanContext& context);
     void ReleaseImage() { _image.reset(); }
 
@@ -35,7 +38,8 @@ class TextureVK final : public Texture
     void RefreshMetadata();
     bool _dynamic = false;
     DecodedImage _pixels;
-    PacLevelMem _level;
+    std::vector<DecodedImage> _lowerPixels;
+    std::vector<PacLevelMem> _levels;
     AlphaStats::Kind _alpha = AlphaStats::Opaque;
     Color _average;
     std::shared_ptr<vk::TextureImage> _image;

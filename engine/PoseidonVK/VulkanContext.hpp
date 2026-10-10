@@ -6,9 +6,15 @@
 #include <atomic>
 #include <string>
 #include <memory>
+#include <span>
 
 namespace Poseidon::vk
 {
+struct TextureMip
+{
+    uint32_t width, height;
+    const void* rgba;
+};
 // Shape owners and recorded frames share immutable allocations. Shutdown releases
 // even allocations whose engine-side Shape outlives the Vulkan device.
 struct MeshBuffers
@@ -58,6 +64,7 @@ class VulkanContext
     std::shared_ptr<MeshBuffers> UploadMesh(const void* vertices, size_t vertexBytes, const void* indices,
                                             size_t indexBytes);
     std::shared_ptr<TextureImage> UploadTexture(uint32_t width, uint32_t height, const void* rgba);
+    std::shared_ptr<TextureImage> UploadTexture(std::span<const TextureMip> mips);
     void DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t firstIndex, uint32_t count, bool index16,
                   const std::array<float, 16>& mvp, const std::array<float, 4>& color,
                   const std::shared_ptr<TextureImage>& texture = {}, unsigned sampler = 0, float alphaCutoff = 0,

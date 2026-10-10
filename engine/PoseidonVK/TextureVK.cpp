@@ -10,11 +10,6 @@ namespace Poseidon
 {
 namespace
 {
-void RequireTop(int level)
-{
-    if (level != 0)
-        throw std::out_of_range("Vulkan textures expose only the original top mip");
-}
 std::string TextureKey(const char* name)
 {
     std::string key(name);
@@ -31,11 +26,14 @@ TextureVK::TextureVK(RStringB name)
     const auto key = TextureKey(name);
     if (file.fail() || file.rest() == 0)
         throw std::runtime_error("Vulkan texture: cannot open " + key);
-    _pixels = DecodePAABuffer(file.act(), file.rest(), key.ends_with(".paa"));
-    if (!_pixels.valid())
+    auto mips = DecodePAAMipChainBuffer(file.act(), file.rest(), key.ends_with(".paa"));
+    if (mips.empty())
         throw std::runtime_error("Vulkan texture: existing PAA/PAC decoder failed for " + key);
+    _pixels = std::move(mips.front());
+    for (size_t i = 1; i < mips.size(); ++i)
+        _lowerPixels.push_back(std::move(mips[i]));
     RefreshMetadata();
-    LOG_INFO(Graphics, "Vulkan texture decoded: {} {}x{} {}", key, _pixels.width, _pixels.height,
+    LOG_INFO(Graphics, "Vulkan texture decoded: {} {}x{} mips={} {}", key, _pixels.width, _pixels.height, ANMipmaps(),
              AlphaKindName(_alpha));
 }
 TextureVK::TextureVK(RStringB name, int width, int height, const void* rgba, uint32_t size) : _dynamic(true)
@@ -60,9 +58,14 @@ void TextureVK::UpdateRGBA(const void* rgba, uint32_t size)
 void TextureVK::RefreshMetadata()
 {
     _alpha = ClassifyAlpha(_pixels.rgba.data(), size_t(_pixels.width) * _pixels.height).kind;
-    _level._w = _pixels.width;
-    _level._h = _pixels.height;
-    _level.SetDestFormat(PacARGB8888, 1);
+    _levels.resize(1 + _lowerPixels.size());
+    for (size_t i = 0; i < _levels.size(); ++i)
+    {
+        const auto& pixels = i ? _lowerPixels[i - 1] : _pixels;
+        _levels[i]._w = pixels.width;
+        _levels[i]._h = pixels.height;
+        _levels[i].SetDestFormat(PacARGB8888, 1);
+    }
     double sum[4]{};
     for (size_t i = 0; i < _pixels.rgba.size(); ++i)
         sum[i % 4] += _pixels.rgba[i];
@@ -71,42 +74,43 @@ void TextureVK::RefreshMetadata()
 }
 int TextureVK::AWidth(int level) const
 {
-    RequireTop(level);
-    return _pixels.width;
+    return _levels.at(level)._w;
 }
 int TextureVK::AHeight(int level) const
 {
-    RequireTop(level);
-    return _pixels.height;
+    return _levels.at(level)._h;
 }
 void TextureVK::ASetNMipmaps(int n)
 {
-    if (n != 1)
+    if (n != ANMipmaps())
         throw std::logic_error("Vulkan texture mip-chain mutation is unsupported");
 }
 AbstractMipmapLevel& TextureVK::AMipmap(int level)
 {
-    RequireTop(level);
-    return _level;
+    return _levels.at(level);
 }
 const AbstractMipmapLevel& TextureVK::AMipmap(int level) const
 {
-    RequireTop(level);
-    return _level;
+    return _levels.at(level);
 }
 Color TextureVK::GetPixel(int level, float u, float v) const
 {
-    RequireTop(level);
-    const int x = int((u - std::floor(u)) * _pixels.width);
-    const int y = int((v - std::floor(v)) * _pixels.height);
-    const auto* pixel = _pixels.rgba.data() + (y * _pixels.width + x) * 4;
+    if (level < 0 || level >= ANMipmaps())
+        throw std::out_of_range("Vulkan texture mip index");
+    const auto& pixels = level ? _lowerPixels[level - 1] : _pixels;
+    const int x = int((u - std::floor(u)) * pixels.width);
+    const int y = int((v - std::floor(v)) * pixels.height);
+    const auto* pixel = pixels.rgba.data() + (y * pixels.width + x) * 4;
     return Color(pixel[0] / 255.f, pixel[1] / 255.f, pixel[2] / 255.f, pixel[3] / 255.f);
 }
 std::shared_ptr<vk::TextureImage> TextureVK::Image(vk::VulkanContext& context)
 {
     if (!_image)
     {
-        _image = context.UploadTexture(_pixels.width, _pixels.height, _pixels.rgba.data());
+        std::vector<vk::TextureMip> mips{{uint32_t(_pixels.width), uint32_t(_pixels.height), _pixels.rgba.data()}};
+        for (const auto& level : _lowerPixels)
+            mips.push_back({uint32_t(level.width), uint32_t(level.height), level.rgba.data()});
+        _image = context.UploadTexture(mips);
         LOG_INFO(Graphics, "Vulkan texture uploaded once: {}", Name());
     }
     return _image;

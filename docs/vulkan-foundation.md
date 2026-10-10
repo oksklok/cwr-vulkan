@@ -526,3 +526,18 @@ Synthetic size/order/alpha/short-chain tests and actual bank-backed `domek1_fron
 `domek2_side`, `detail_dx`, Abel `rwn` and `s3` checks passed: 24 cases/4318 assertions.
 Top-only Vulkan texture regression was visually checked with resize/restore/close,
 zero validation issues. GPU mip upload follows separately.
+
+Vulkan now uploads every decoded stored level in one staging allocation/copy
+submission, transitions the complete chain, and exposes all levels in its image
+view. Shared samplers use trilinear filtering, or nearest texel/mip for explicit
+point sampling; clamp/repeat remain unchanged. Image-view bounds handle shorter
+chains. Dynamic font/UI and interpolated textures retain their single-level path;
+alpha classification still uses the original top level, avoiding reclassification
+of cutout assets from lower-mip edge alpha. Texture metadata/CPU pixels expose
+the original levels too. No generated mips, streaming or cache redesign.
+RTX `mips-menu`, `mips-mission`, `mips-models` captures were inspected: distant
+terrain speckle is clearly reduced against `state-menu`, original building/road
+textures and cutout foliage remain visible, HUD/UI still blend. Movement,
+resize/minimize/restore and close passed with zero validation issues through
+shutdown (menu 83 and mission 95 submissions). Focused decoder/stock/Shape tests:
+30 cases/4364 assertions; policy CTest passes. Both build configurations passed.

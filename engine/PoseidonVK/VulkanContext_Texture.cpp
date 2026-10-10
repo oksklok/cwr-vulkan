@@ -1,6 +1,7 @@
 #include <PoseidonVK/VulkanContext.hpp>
 #include <algorithm>
 #include <stdexcept>
+#include <cstring>
 
 namespace Poseidon::vk
 {
@@ -47,7 +48,8 @@ void VulkanContext::CreateTextureLayout()
     {
         VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
         sampler.magFilter = sampler.minFilter = (i & 4) ? VK_FILTER_NEAREST : VK_FILTER_LINEAR;
-        sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        sampler.mipmapMode = (i & 4) ? VK_SAMPLER_MIPMAP_MODE_NEAREST : VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        sampler.maxLod = VK_LOD_CLAMP_NONE; // Image view bounds naturally clamp valid shorter chains.
         sampler.addressModeU = (i & 1) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
         sampler.addressModeV = (i & 2) ? VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE : VK_SAMPLER_ADDRESS_MODE_REPEAT;
         sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
@@ -56,8 +58,30 @@ void VulkanContext::CreateTextureLayout()
 }
 std::shared_ptr<TextureImage> VulkanContext::UploadTexture(uint32_t width, uint32_t height, const void* rgba)
 {
-    if (!_device || !width || !height || !rgba)
+    const TextureMip mip{width, height, rgba};
+    return UploadTexture(std::span(&mip, 1));
+}
+std::shared_ptr<TextureImage> VulkanContext::UploadTexture(std::span<const TextureMip> mips)
+{
+    if (!_device || mips.empty())
         throw std::invalid_argument("Vulkan texture upload requires pixels and a live device");
+    std::vector<VkBufferImageCopy> copies;
+    VkDeviceSize bytes = 0;
+    for (size_t level = 0; level < mips.size(); ++level)
+    {
+        const auto& mip = mips[level];
+        if (!mip.width || !mip.height || !mip.rgba ||
+            (level && (mip.width != std::max(1u, mips[level - 1].width / 2) ||
+                       mip.height != std::max(1u, mips[level - 1].height / 2) ||
+                       (mips[level - 1].width == 1 && mips[level - 1].height == 1))))
+            throw std::invalid_argument("Vulkan texture upload has an invalid RGBA mip chain");
+        VkBufferImageCopy copy{};
+        copy.bufferOffset = bytes; // RGBA levels are naturally four-byte aligned.
+        copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, uint32_t(level), 0, 1};
+        copy.imageExtent = {mip.width, mip.height, 1};
+        copies.push_back(copy);
+        bytes += VkDeviceSize(mip.width) * mip.height * 4;
+    }
     CreateTextureLayout();
     auto texture = std::make_shared<TextureImage>();
     texture->device = _device;
@@ -67,15 +91,17 @@ std::shared_ptr<TextureImage> VulkanContext::UploadTexture(uint32_t width, uint3
     bool submitted = false;
     try
     {
-        Require(CreateHostVisibleBuffer(_physical, _device, VkDeviceSize(width) * height * 4,
-                                        VK_BUFFER_USAGE_TRANSFER_SRC_BIT, staging),
+        Require(CreateHostVisibleBuffer(_physical, _device, bytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, staging),
                 "create staging buffer");
-        UploadMappedBuffer(staging, rgba, size_t(width) * height * 4);
+        for (size_t level = 0; level < mips.size(); ++level)
+            std::memcpy(static_cast<char*>(staging.mapped) + copies[level].bufferOffset, mips[level].rgba,
+                        size_t(mips[level].width) * mips[level].height * 4);
         VkImageCreateInfo image{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
         image.imageType = VK_IMAGE_TYPE_2D;
         image.format = VK_FORMAT_R8G8B8A8_UNORM;
-        image.extent = {width, height, 1};
-        image.mipLevels = image.arrayLayers = 1;
+        image.extent = {mips[0].width, mips[0].height, 1};
+        image.mipLevels = uint32_t(mips.size());
+        image.arrayLayers = 1;
         image.samples = VK_SAMPLE_COUNT_1_BIT;
         image.tiling = VK_IMAGE_TILING_OPTIMAL;
         image.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -106,14 +132,12 @@ std::shared_ptr<TextureImage> VulkanContext::UploadTexture(uint32_t width, uint3
         barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         barrier.srcQueueFamilyIndex = barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.image = texture->image;
-        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+        barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, uint32_t(mips.size()), 0, 1};
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
         vkCmdPipelineBarrier(command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr,
                              0, nullptr, 1, &barrier);
-        VkBufferImageCopy copy{};
-        copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-        copy.imageExtent = {width, height, 1};
-        vkCmdCopyBufferToImage(command, staging.buffer, texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+        vkCmdCopyBufferToImage(command, staging.buffer, texture->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               uint32_t(copies.size()), copies.data());
         barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
         barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
