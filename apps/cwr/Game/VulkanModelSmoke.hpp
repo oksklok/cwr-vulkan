@@ -26,6 +26,7 @@ class VulkanModelSmoke
         GFileServer = new FileServerST(8 * 1024 * 1024);
         GFileServer->Start();
         _scene = std::make_unique<Scene>();
+        _scene->SetMainLight(new LightSun); // Scene owns the same engine sun used by normal gameplay.
         GScene = _scene.get();
         if (world)
             LoadWorldScenery();

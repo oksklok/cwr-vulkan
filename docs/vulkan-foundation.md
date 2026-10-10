@@ -657,3 +657,31 @@ terrain as GL33. This does not change GPU repeat/clamp sampling. The corrected
 run passed resize/restore/close with zero validation issues. Focused ON/OFF
 checks pass (53/52 cases, 4776/4726 assertions), plus 89 driver-free policy checks.
 Evidence: `build/lighting-live/{m4-*,reference-night*,reference-day,reference-visibility}`.
+
+Final integration: Heavy Metal's 100-second timed run included a 60-second
+sustained segment and grenade dust/smoke; Infantry and Take the Car each had
+30-second sustained segments with movement, aiming/firing, weapon/reload,
+map/pause and resize/minimize/restore. Infantry exited via pause-menu Abort;
+Take the Car closed normally. Shutdown reported zero Khronos core/sync errors
+or warnings (6887/6409/3810 submissions). Normal Vulkan menu/intro timed exit
+also passed (3422 submissions). Real captures, not exit codes alone, were checked.
+The old smoke fixtures needed an owned engine sun after lighting was introduced;
+they now initialize it, and the cube has actual face normals. Shape, texture,
+P3D model, WRP scenery and triangle smoke modes all passed visual/lifecycle checks.
+Both builds and focused tests pass; default GL33 visibly opens the stock menu in
+both executables. Stock data/resources counts, sizes and metadata hashes are unchanged.
+
+Comparable Heavy Metal samples (800x600, validation on) changed from roughly
+12..13 ms / 77..82 FPS to 14..15 ms / 67..72 FPS with lighting/fog. Infantry
+settled around 8..9 ms / 111..125 FPS. These are similar-view samples, not a
+controlled benchmark; loading, map changes and resize intervals are excluded.
+Settled GPU allocations and texture uploads remain zero; transient uploads are
+about 0.05 ms/frame in Heavy Metal, with no new synchronous per-draw uploads.
+Evidence: `build/lighting-live/m5-*`.
+
+Remaining differences: no object/vehicle shadows or full material specular
+response; water parity is still approximate, with a thin bright shoreline strip
+in Infantry absent from the GL33 reference. Two small water-state experiments
+did not fix it and were reverted. No campaign/full mission was completed, and
+night-vision goggles were not exercised. Basic object/vehicle shadow parity is
+the highest-value next visual milestone.

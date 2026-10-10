@@ -40,10 +40,13 @@ class VulkanShapeSmoke
             face.Init();
             face.SetN(4);
             const float uv[][2] = {{0, 1}, {1, 1}, {1, 0}, {0, 0}};
+            const Vector3 normal = (points[faces[i][1]] - points[faces[i][0]])
+                                       .CrossProduct(points[faces[i][2]] - points[faces[i][0]])
+                                       .Normalized();
             for (int v = 0; v < 4; ++v)
             {
                 face.Set(v, i * 4 + v);
-                _shape.AddVertexFast(points[faces[i][v]], VUp, 0, uv[v][0], uv[v][1]);
+                _shape.AddVertexFast(points[faces[i][v]], normal, 0, uv[v][0], uv[v][1]);
             }
             sections[i].properties.Init();
             sections[i].material = 0;
@@ -64,6 +67,7 @@ class VulkanShapeSmoke
         _camera.SetPosition(Vector3(3, 2, -4));
         _camera.SetOrient(Vector3(0.15f, 0.08f, 1), VUp);
         _scene = std::make_unique<Scene>();
+        _scene->SetMainLight(new LightSun);
         GScene = _scene.get();
         LOG_INFO(Graphics, "Shape smoke: 24 engine vertices, 6 quad sections, 36 fan indices; two native Shape draws, "
                            "non-origin camera");

@@ -83,8 +83,8 @@ void EngineVK::PrepareTriangleTL(const MipInfo& mip, const render::LegacySpec& s
 
 void EngineVK::PrepareMeshTL(const LightList& lights, const Matrix4& modelToWorld, const render::LegacySpec& spec)
 {
-    if (!GScene || !GScene->GetCamera())
-        throw std::logic_error("Vulkan Shape: mesh preparation needs a scene camera");
+    if (!GScene || !GScene->GetCamera() || !GScene->MainLight())
+        throw std::logic_error("Vulkan Shape: mesh preparation needs a scene camera and sun");
     if (!vk::SupportedShapeSpec(spec))
     {
         LOG_ERROR(Graphics, "Vulkan TL mesh unsupported flags: 0x{:x}", render::MergeLegacy(spec));
