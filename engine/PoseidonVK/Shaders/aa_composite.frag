@@ -11,7 +11,9 @@ layout(location=0) out vec4 outColor;
 void main() {
     // Exact pixel-area integration, including fractional 125/150% footprints.
     // A <= 2x scale overlaps at most three texels on either axis.
-    vec2 ratio = aa.metrics.zw * aa.outputMetrics.xy;
+    // Divide dimensions directly: a rounded reciprocal can pull adjacent depth
+    // into the footprint even at 100% scale (e.g. a 642-pixel drawable).
+    vec2 ratio = aa.metrics.zw / aa.outputMetrics.zw;
     vec2 lo = floor(gl_FragCoord.xy) * ratio, hi = lo + ratio;
     ivec2 first = ivec2(floor(lo));
     vec4 color = vec4(0); float total = 0; float depth = 1;

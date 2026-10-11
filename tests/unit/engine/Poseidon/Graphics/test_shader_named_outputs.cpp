@@ -112,6 +112,31 @@ struct GlslangInit
 };
 } // namespace
 
+TEST_CASE("Vulkan AA native-resolution footprint excludes neighboring depth", "[Graphics][Shaders][vulkan-aa]")
+{
+    const auto path = std::filesystem::path(TESTS_ROOT_DIR).parent_path() /
+                      "engine" / "PoseidonVK" / "Shaders" / "aa_composite.frag";
+    const auto source = ReadTextFile(path);
+    // Pin the shipped expression as well as checking its float32 arithmetic:
+    // width * rounded(1/width) can be below 1 (e.g. width 642). Any positive
+    // neighboring coverage participates fully in the conservative depth min.
+    REQUIRE(std::regex_search(source, std::regex(
+        R"(vec2\s+ratio\s*=\s*aa\.metrics\.zw\s*/\s*aa\.outputMetrics\.zw\s*;)")));
+    for (int extent : {642, 647, 1080, 1920})
+    {
+        const float sourceExtent = float(extent), outputExtent = float(extent);
+        const float ratio = sourceExtent / outputExtent;
+        REQUIRE(ratio == 1.f);
+        for (int pixel : {0, 1, 100, extent - 1})
+        {
+            CAPTURE(extent, pixel);
+            const float lo = float(pixel) * ratio, hi = lo + ratio;
+            REQUIRE(lo == float(pixel));
+            REQUIRE(hi == float(pixel + 1));
+        }
+    }
+}
+
 TEST_CASE("I-28: every shipped GL33 shader compiles cleanly under glslang", "[Graphics][Shaders][I-28]")
 {
     GlslangInit init;
