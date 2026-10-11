@@ -8,7 +8,9 @@
 #include <filesystem>
 #include <chrono>
 #include <iterator>
+#include <limits>
 #include <memory>
+#include <stdexcept>
 #include <vector>
 #include "test_fixtures.hpp"
 #include <Poseidon/Graphics/Textures/PAADecoder.hpp>
@@ -117,6 +119,33 @@ TEST_CASE("PAADecoder: AI88 preserves all intensity and alpha bits in every stor
 }
 
 #if CWR_HAS_VULKAN
+TEST_CASE("Vulkan sky interpolation returns null for missing inputs", "[Graphics][PAADecoder][SkyLoadOrKeep]")
+{
+    const std::string valid = GET_FIXTURE("texture/paa/synthetic_dxt1.paa");
+    const std::string missing = valid + ".missing-" +
+                               std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    REQUIRE_FALSE(std::filesystem::exists(missing));
+    vk::VulkanContext context; // Exercise the real texture bank without a GPU.
+    TextBankVK bank(context);
+    const auto original = bank.Load(valid.c_str());
+    REQUIRE(original);
+    const auto previous = bank.LoadInterpolated(valid.c_str(), valid.c_str(), 0.5f);
+    REQUIRE(previous);
+    const auto pixels = static_cast<TextureVK*>(previous.GetRef())->Pixels().rgba;
+
+    // Weather's load-or-keep helper expects null, not an exception.
+    REQUIRE_FALSE(bank.LoadInterpolated(missing.c_str(), valid.c_str(), 0.5f));
+    REQUIRE_FALSE(bank.LoadInterpolated(valid.c_str(), missing.c_str(), 0.5f));
+    REQUIRE_FALSE(bank.LoadInterpolated(missing.c_str(), missing.c_str(), 0.5f));
+    REQUIRE(static_cast<TextureVK*>(previous.GetRef())->Pixels().rgba == pixels);
+    REQUIRE(bank.LoadInterpolated(valid.c_str(), valid.c_str(), 0.5f) == previous);
+    // Endpoint selection and invalid-factor errors retain their existing behavior.
+    REQUIRE(bank.LoadInterpolated(valid.c_str(), missing.c_str(), 0.f) == original);
+    REQUIRE(bank.LoadInterpolated(missing.c_str(), valid.c_str(), 1.f) == original);
+    REQUIRE_THROWS_AS(bank.LoadInterpolated(valid.c_str(), valid.c_str(),
+                         std::numeric_limits<float>::quiet_NaN()), std::invalid_argument);
+}
+
 TEST_CASE("Vulkan DXT1 sky interpolation preserves legacy source quantization", "[Graphics][PAADecoder]")
 {
     struct TemporarySky

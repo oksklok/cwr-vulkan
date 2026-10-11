@@ -197,7 +197,7 @@ Ref<Texture> TextBankVK::LoadInterpolated(RStringB first, RStringB second, float
         return found->second.GetRef();
     Ref<Texture> a = Load(first), b = Load(second);
     if (!a || !b)
-        throw std::invalid_argument("Vulkan interpolation requires two textures");
+        return nullptr; // Let Weather's load-or-keep path retain the previous sky.
     const bool packed = vk::InterpolatesRGB555(static_cast<TextureVK*>(a.GetRef())->_sourceFormat) &&
                         vk::InterpolatesRGB555(static_cast<TextureVK*>(b.GetRef())->_sourceFormat);
     const auto& p = packed ? static_cast<TextureVK*>(a.GetRef())->InterpolationPixels() :
