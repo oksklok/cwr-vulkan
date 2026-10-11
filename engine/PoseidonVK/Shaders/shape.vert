@@ -9,9 +9,12 @@ layout(location = 1) out vec4 vertexColor;
 layout(location = 2) out float fogVisibility;
 layout(location = 3) out vec3 specularColor;
 layout(location = 4) out vec3 shadowWorld;
+layout(location = 5) out vec4 previousClip;
 layout(push_constant) uniform ShapeDraw { mat4 mvp; vec4 color; float alphaCutoff; float reserved; float detailEnabled; float shadow; } draw;
 void main() {
     gl_Position = draw.mvp * vec4(position, 1.0);
+    gl_Position.xy += lighting.temporal.xy * gl_Position.w;
+    previousClip = lighting.temporal.z > 0.5 ? lighting.previousMVP * vec4(position, 1.0) : vec4(0);
     texCoord = uv;
     specularColor = vec3(0.0);
     vec3 relativeWorld = (lighting.world * vec4(position, 1.0)).xyz;

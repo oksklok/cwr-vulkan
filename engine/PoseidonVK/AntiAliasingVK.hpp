@@ -11,6 +11,7 @@ enum class AAMode
     Off,
     FXAA,
     SMAA,
+    TAA,
     MSAA2,
     MSAA4,
     MSAA8
@@ -23,6 +24,8 @@ inline const char* AAName(AAMode mode)
             return "fxaa";
         case AAMode::SMAA:
             return "smaa";
+        case AAMode::TAA:
+            return "taa";
         case AAMode::MSAA2:
             return "msaa2";
         case AAMode::MSAA4:
@@ -35,7 +38,7 @@ inline const char* AAName(AAMode mode)
 }
 inline bool ParseAA(std::string_view name, AAMode& result)
 {
-    for (auto mode : {AAMode::Off, AAMode::FXAA, AAMode::SMAA, AAMode::MSAA2, AAMode::MSAA4, AAMode::MSAA8})
+    for (auto mode : {AAMode::Off, AAMode::FXAA, AAMode::SMAA, AAMode::TAA, AAMode::MSAA2, AAMode::MSAA4, AAMode::MSAA8})
         if (name == AAName(mode))
         {
             result = mode;

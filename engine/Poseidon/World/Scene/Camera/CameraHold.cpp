@@ -556,6 +556,7 @@ void CameraVehicle::Command(RString mode)
 
 void CameraVehicle::Commit(float time)
 {
+    if (time <= 0 && GEngine) GEngine->ResetTemporalHistory();
     Time cTime = Glob.time + time;
     // commit all settings
     if (_set._camPos)

@@ -9,6 +9,8 @@
 #include <Poseidon/Graphics/Rendering/Colors.hpp>
 #include <Poseidon/Foundation/Math/Math3DP.hpp>
 #include <Poseidon/Foundation/Containers/StaticArray.hpp>
+#include <array>
+#include <vector>
 
 namespace Poseidon
 {
@@ -77,6 +79,16 @@ class TLVertexTable
 
   public:
     void ReleaseTables();
+    // Optional sidecar: previous homogeneous clip positions, before perspective.
+    // Empty outside temporal world drawing; does not change the legacy TL layout.
+    std::vector<std::array<float, 4>> previousClip;
+    void InterpolatePrevious(int dst, int a, int b, float t)
+    {
+        if (previousClip.empty()) return;
+        previousClip.resize(NVertex());
+        for (int k = 0; k < 4; ++k)
+            previousClip[dst][k] = previousClip[a][k] * (1-t) + previousClip[b][k] * t;
+    }
 
   private:
     // disable default copy

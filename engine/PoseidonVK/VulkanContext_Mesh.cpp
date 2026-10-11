@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <PoseidonVK/Shaders/shape.vert.hpp>
 #include <PoseidonVK/Shaders/shape.frag.hpp>
+#include <PoseidonVK/Shaders/shape_temporal.frag.hpp>
 #include <PoseidonVK/Shaders/screen.vert.hpp>
 #include <PoseidonVK/Shaders/shadow.frag.hpp>
 #include <cstdio>
@@ -171,8 +172,8 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         shader.codeSize = screen ? sizeof(Cwrscreen_vert) : sizeof(Cwrshape_vert);
         shader.pCode = screen ? Cwrscreen_vert : Cwrshape_vert;
         Require(vkCreateShaderModule(_device, &shader, nullptr, &vertex), "create vertex shader");
-        shader.codeSize = shadow ? sizeof(Cwrshadow_frag) : sizeof(Cwrshape_frag);
-        shader.pCode = shadow ? Cwrshadow_frag : Cwrshape_frag;
+        shader.codeSize = shadow ? sizeof(Cwrshadow_frag) : TemporalEnabled() ? sizeof(Cwrshape_temporal_frag) : sizeof(Cwrshape_frag);
+        shader.pCode = shadow ? Cwrshadow_frag : TemporalEnabled() ? Cwrshape_temporal_frag : Cwrshape_frag;
         Require(vkCreateShaderModule(_device, &shader, nullptr, &fragment), "create fragment shader");
         VkPipelineShaderStageCreateInfo stages[2]{};
         stages[0].sType = stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -186,16 +187,17 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         const VkVertexInputAttributeDescription attributes[] = {{0, 0, VK_FORMAT_R32G32B32_SFLOAT, 0},
                                                                 {1, 0, VK_FORMAT_R32G32_SFLOAT, 6 * sizeof(float)},
                                                                 {2, 0, VK_FORMAT_R32G32B32_SFLOAT, 3 * sizeof(float)}};
-        const VkVertexInputBindingDescription screenBinding{0, 11 * sizeof(float), VK_VERTEX_INPUT_RATE_VERTEX};
+        const VkVertexInputBindingDescription screenBinding{0, sizeof(ScreenVertex), VK_VERTEX_INPUT_RATE_VERTEX};
         const VkVertexInputAttributeDescription screenAttributes[] = {
             {0, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 0},
             {1, 0, VK_FORMAT_R32G32_SFLOAT, 4 * sizeof(float)},
             {2, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 6 * sizeof(float)},
-            {3, 0, VK_FORMAT_R32_SFLOAT, 10 * sizeof(float)}};
+            {3, 0, VK_FORMAT_R32_SFLOAT, 10 * sizeof(float)},
+            {4, 0, VK_FORMAT_R32G32B32A32_SFLOAT, 11 * sizeof(float)}};
         VkPipelineVertexInputStateCreateInfo input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
         input.vertexBindingDescriptionCount = 1;
         input.pVertexBindingDescriptions = screen ? &screenBinding : &binding;
-        input.vertexAttributeDescriptionCount = screen ? 4 : 3;
+        input.vertexAttributeDescriptionCount = screen ? 5 : 3;
         input.pVertexAttributeDescriptions = screen ? screenAttributes : attributes;
         VkPipelineInputAssemblyStateCreateInfo assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
         assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
@@ -237,6 +239,14 @@ void VulkanContext::CreateShapePipeline(bool translucent, bool screen, bool dept
         VkPipelineColorBlendStateCreateInfo blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
         blend.attachmentCount = 1;
         blend.pAttachments = &attachment;
+        VkPipelineColorBlendAttachmentState temporalAttachments[]{attachment, {}};
+        if (TemporalEnabled())
+        {
+            // Projected shadows only modulate color; keep the receiving surface's motion.
+            temporalAttachments[1].colorWriteMask = shadow ? 0 : 15;
+            blend.attachmentCount = 2;
+            blend.pAttachments = temporalAttachments;
+        }
         const VkDynamicState states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
         VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
         dynamic.dynamicStateCount = 2;
@@ -330,6 +340,11 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     if (lighting)
     {
         auto receiver = *lighting;
+        receiver.temporal[0] = TemporalEnabled() ? _taaJitter[0] : 0;
+        receiver.temporal[1] = TemporalEnabled() ? _taaJitter[1] : 0;
+        receiver.temporal[3] = TemporalEnabled() ?
+            (!depthTest || (!depthWrite && lighting->temporal[3] >= 0) ? 2.f : blend ? 1.f : 0.f) : 0.f;
+        if (TemporalEnabled()) receiver.temporalExtent = {1.f / _worldExtent.width, 1.f / _worldExtent.height, 0, 0};
         receiver.shadow = _csmActive ? _csmState : ShadowLighting{};
         BindLighting(receiver, screen);
         if (_profile.enabled && !shadow)
@@ -344,6 +359,9 @@ void VulkanContext::DrawMesh(const std::shared_ptr<MeshBuffers>& mesh, uint32_t 
     else
     {
         ShapeLighting unlit;
+        unlit.temporal = {TemporalEnabled() ? _taaJitter[0] : 0, TemporalEnabled() ? _taaJitter[1] : 0,
+                          0, TemporalEnabled() ? (!depthWrite || !depthTest ? 2.f : blend ? 1.f : 0.f) : 0.f};
+        if (TemporalEnabled()) unlit.temporalExtent = {1.f / _worldExtent.width, 1.f / _worldExtent.height, 0, 0};
         unlit.fogColor = _fogColor;
         unlit.eyeCoef = _eyeCoef;
         BindLighting(unlit, true);

@@ -5,13 +5,17 @@ layout(location = 0) in vec4 clipPosition;
 layout(location = 1) in vec2 uv;
 layout(location = 2) in vec4 color;
 layout(location = 3) in float fog;
+layout(location = 4) in vec4 oldClip;
 layout(location = 0) out vec2 texCoord;
 layout(location = 1) out vec4 vertexColor;
 layout(location = 2) out float fogVisibility;
 layout(location = 3) out vec3 specularColor;
 layout(location = 4) out vec3 shadowWorld;
+layout(location = 5) out vec4 previousClip;
 void main() {
     gl_Position = clipPosition;
+    gl_Position.xy += lighting.temporal.xy * gl_Position.w;
+    previousClip = oldClip;
     texCoord = uv;
     vertexColor = color;
     fogVisibility = fog;

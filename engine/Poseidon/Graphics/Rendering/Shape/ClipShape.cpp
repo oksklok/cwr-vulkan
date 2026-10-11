@@ -445,6 +445,7 @@ void FaceArray::Draw(const IAnimator* matSource, const LightList& lights, const 
 {
     Matrix4 pointView = GScene->ScaledInvTransform() * transform;
     TLVertexTable tlTable(matSource, mesh, pointView);
+    GEngine->CaptureTemporalMesh(mesh, tlTable, spec);
     Draw(matSource, tlTable, lights, mesh, clip, spec, invTransform);
 }
 } // namespace Poseidon

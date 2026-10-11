@@ -15,6 +15,7 @@ void EngineVK::PrepareMesh(const render::LegacySpec&)
 }
 void EngineVK::BeginMesh(TLVertexTable& mesh, const render::LegacySpec&)
 {
+    if (_temporalTerrain) CaptureTemporalTerrain(mesh, false);
     if (_softwareMesh || _activeShape)
         throw std::logic_error("Vulkan software BeginMesh requires an idle open frame");
     _softwareVertices.assign(mesh.NVertex(), {});
@@ -81,6 +82,9 @@ void EngineVK::SubmitSoftware(const std::vector<uint32_t>& indices)
         vertex.v = source.t0.v;
         vertex.color = source.color;
         _softwareVertices[index] = vk::ScreenGeometry(vertex, _width, _height);
+        if (index < _softwareMesh->previousClip.size())
+            std::copy(_softwareMesh->previousClip[index].begin(), _softwareMesh->previousClip[index].end(),
+                      _softwareVertices[index].previousClip);
         // TL already contains the scene Fog8 visibility in specular.a. Alpha
         // fog is already in color.a; it must not also get an RGB fog mix.
         _softwareVertices[index].fog =
@@ -105,6 +109,7 @@ void EngineVK::SubmitSoftware(const std::vector<uint32_t>& indices)
     const float cutoff = shadow ? std::max(1, (GetShadowFactor() * 7) >> 4) / 255.f :
                                  state.cutoff;
     vk::ShapeLighting receiver;
+    receiver.temporal[3] = _temporalTerrain ? -1.f : 0.f; // certified stationary surface overlay
     receiver.fogColor = {_fogColor.R(), _fogColor.G(), _fogColor.B(), 1};
     receiver.eyeCoef = _vk.EyeCoef();
     if (_shadowWorld && _shadowTuning.enabled &&
@@ -121,7 +126,7 @@ void EngineVK::SubmitSoftware(const std::vector<uint32_t>& indices)
     _vk.DrawMesh(mesh.buffers, 0, indices.size(), false, {}, {1, 1, 1, 1}, image,
                  vk::ShapeSampler(render::SplitLegacy(_softwareFlags)), cutoff, blend, true,
                  (_softwareFlags & NoZBuf) == 0, nullptr, {}, 1, {0, -1, 0}, mesh.vertexOffset, mesh.indexOffset,
-                 (_softwareFlags & NoZWrite) == 0, receiver.shadowReceiver[0] ? &receiver : nullptr,
+                 (_softwareFlags & NoZWrite) == 0, receiver.shadowReceiver[0] || _temporalTerrain ? &receiver : nullptr,
                  shadow, !shadow && (_softwareFlags & IsLight) != 0);
 }
 void EngineVK::EndMesh(TLVertexTable& mesh)

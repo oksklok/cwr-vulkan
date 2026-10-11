@@ -1,4 +1,5 @@
 #include <PoseidonVK/EngineVK.hpp>
+#include <PoseidonVK/ShapeTransformVK.hpp>
 
 #include <Poseidon/Graphics/Shared/WindowPlacement.hpp>
 #include <Poseidon/Foundation/Logging/Logging.hpp>
@@ -124,6 +125,8 @@ RString EngineVK::GetRendererName() const
 
 void EngineVK::InitDraw(bool clear, PackedColor color)
 {
+    if (!_temporalWorldDrawn) ResetTemporalHistory();
+    _temporalWorldDrawn = false;
     if (!IsAbleToDraw() || _vk.FrameOpen())
         return;
     try
@@ -178,9 +181,13 @@ void EngineVK::BeginWorldEffects(bool enabled)
         const auto& p = GScene->GetCamera()->ProjectionNormal();
         _worldProjection = {p(0, 0), p(1, 1), p(2, 2), p.Position().Z()};
         _vk.BeginAAWorld();
+        BeginTemporalWorld();
     }
     else
+    {
+        ResetTemporalHistory();
         _worldEffectsPending = false;
+    }
 }
 
 void EngineVK::FinishWorldEffects()
@@ -189,6 +196,17 @@ void EngineVK::FinishWorldEffects()
     if (!_worldEffectsPending)
         return;
     _worldEffectsPending = false;
+    if (_vk.TemporalEnabled() && GScene && GScene->GetCamera())
+    {
+        const auto* camera = GScene->GetCamera();
+        _previousWorldView = GScene->ScaledInvTransform();
+        _previousProjection = camera->ProjectionNormal();
+        _previousSoftwareProjection = vk::SoftwareProjection(camera->Projection(), _width, _height);
+        _previousCameraPosition = camera->Position();
+        _previousCameraDirection = camera->Direction();
+        _previousJitter = _vk.TemporalJitter();
+        _temporalCameraValid = true;
+    }
     _vk.FinishAAWorld(_worldProjection);
 }
 

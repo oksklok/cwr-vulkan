@@ -24,5 +24,8 @@ struct alignas(16) ShapeLighting
     std::array<ShapeLocalLight, 8> localLights{};
     std::array<float, 4> shadowReceiver{}; // enabled, software projection X/Y
     ShadowLighting shadow{};
+    std::array<float, 16> previousMVP{};
+    std::array<float, 4> temporal{}; // jitter NDC xy, history valid, reactive
+    std::array<float, 4> temporalExtent{}; // inverse width/height
 };
 } // namespace Poseidon::vk

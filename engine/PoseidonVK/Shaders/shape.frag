@@ -8,6 +8,10 @@ layout(location = 1) in vec4 vertexColor;
 layout(location = 2) in float fogVisibility;
 layout(location = 3) in vec3 specularColor;
 layout(location = 4) in vec3 shadowWorld;
+layout(location = 5) in vec4 previousClip;
+#ifdef TEMPORAL
+layout(location = 1) out vec4 motion;
+#endif
 layout(set = 0, binding = 0) uniform sampler2D diffuseTexture;
 layout(set = 1, binding = 0) uniform sampler2D detailTexture;
 layout(push_constant) uniform ShapeDraw { mat4 mvp; vec4 color; float alphaCutoff; float reserved; float detailEnabled; vec4 lightDirection; } draw;
@@ -32,4 +36,15 @@ void main() {
     float nightBlend = clamp(luminance + lighting.eyeCoef.a, 0.0, 1.0);
     outColor.rgb = mix(vec3(luminance), outColor.rgb, nightBlend);
     outColor.rgb = mix(lighting.fogColor.rgb, outColor.rgb, clamp(fogVisibility, 0.0, 1.0));
+#ifdef TEMPORAL
+    // UV displacement current -> previous (including projection jitter), expected
+    // previous depth, validity. Unsupported/translucent fragments overwrite validity.
+    bool reactive = lighting.temporal.w > 1.5 || (lighting.temporal.w > .5 && outColor.a < .98);
+    motion = vec4(0,0,0,reactive ? -1 : 0);
+    if (previousClip.w > 0.0001 && !reactive) {
+        vec3 oldNdc = previousClip.xyz / previousClip.w;
+        motion = vec4(oldNdc.xy * 0.5 + 0.5 - gl_FragCoord.xy * lighting.temporalExtent.xy,
+                      previousClip.w, draw.alphaCutoff > 0.0 ? 0.75 : 1.0);
+    }
+#endif
 }

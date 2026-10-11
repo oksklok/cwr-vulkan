@@ -1,4 +1,5 @@
 #pragma once
+#include <Poseidon/Graphics/Core/RenderIdentity.hpp>
 
 #include <Poseidon/Foundation/Containers/BoolArray.hpp>
 
@@ -278,6 +279,7 @@ class Shape: public Poseidon::VertexTable
 	friend class LODShapeWithShadow* Poseidon::Model::ShapeAdapter::convertToLODShape(const Poseidon::Model::Model& model, bool reversed);
 	
  private:
+	 render::RenderIdentity _renderIdentity;
 	
   // Stream of faces.
   /*
@@ -332,6 +334,7 @@ class Shape: public Poseidon::VertexTable
 
 	public:
 	// constructors and destructors
+	uint64_t RenderIdentity() const { return _renderIdentity.Get(); }
 	Shape();
 	Shape( const Shape &src, bool copyAnimations=true );
 

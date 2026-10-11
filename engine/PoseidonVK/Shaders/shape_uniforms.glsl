@@ -18,4 +18,7 @@ layout(set = 2, binding = 0, std140) uniform ShapeLighting {
     vec4 cascadeControl;
     vec4 shadowForward;
     vec4 shadowStrength;
+    mat4 previousMVP;
+    vec4 temporal;
+    vec4 temporalExtent;
 } lighting;

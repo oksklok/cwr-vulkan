@@ -6,6 +6,7 @@
 #include <PoseidonVK/Shaders/smaa_blend.frag.hpp>
 #include <PoseidonVK/Shaders/aa_composite.frag.hpp>
 #include <PoseidonVK/Shaders/aa_composite_ms.frag.hpp>
+#include <PoseidonVK/Shaders/taa.frag.hpp>
 #include <PoseidonVK/ThirdParty/SMAA/AreaTex.h>
 #include <PoseidonVK/ThirdParty/SMAA/SearchTex.h>
 #include <cstdio>
@@ -24,14 +25,25 @@ void Require(VkResult result, const char* operation)
 
 std::string VulkanContext::SetAntiAliasing(std::string_view name)
 {
+    if (name == "motion" || name == "motion-off")
+    {
+        _motionDebug = name == "motion";
+        ResetTemporalHistory();
+        return "OK: motion debug changed (requires taa)";
+    }
     if (name == "status")
         return std::string("active=") + AAName(_aaMode) + " requested=" + AAName(_requestedAA) +
                " scale=" + std::to_string(_renderScale) + " requestedScale=" + std::to_string(_requestedScale) +
                " sampleMask=" + std::to_string(_aaSampleSupport);
     AAMode mode;
     if (!ParseAA(name, mode))
-        return name == "taa" ? "UNSUPPORTED: TAA requires persistent object and deformed-vertex motion history"
-                             : "INVALID: off, fxaa, smaa, msaa2, msaa4, msaa8, status";
+        return "INVALID: off, fxaa, smaa, taa, msaa2, msaa4, msaa8, motion, motion-off, status";
+    if (mode == AAMode::TAA && _physical)
+    {
+        VkPhysicalDeviceFeatures features{};
+        vkGetPhysicalDeviceFeatures(_physical, &features);
+        if (!features.independentBlend) return "UNSUPPORTED: TAA requires independent attachment blending";
+    }
     if (!(_aaSampleSupport & AASamples(mode)))
         return "UNSUPPORTED: requested color/depth sample count; previous mode retained";
     if (_requestedAA != mode)
@@ -142,6 +154,12 @@ void VulkanContext::CreateAAResources(VkFormat format)
     attachments[2] = color;
     attachments[2].samples = VK_SAMPLE_COUNT_1_BIT;
     attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    const bool temporal = _aaMode == AAMode::TAA;
+    if (temporal)
+    {
+        attachments[2].format = VK_FORMAT_R16G16B16A16_SFLOAT;
+        attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    }
     const VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
     const VkAttachmentReference depthRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
     const VkAttachmentReference resolveRef{2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
@@ -149,6 +167,12 @@ void VulkanContext::CreateAAResources(VkFormat format)
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorRef;
+    const VkAttachmentReference temporalRefs[]{colorRef, {2, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL}};
+    if (temporal)
+    {
+        subpass.colorAttachmentCount = 2;
+        subpass.pColorAttachments = temporalRefs;
+    }
     subpass.pDepthStencilAttachment = &depthRef;
     subpass.pResolveAttachments = _worldSamples != VK_SAMPLE_COUNT_1_BIT ? &resolveRef : nullptr;
     VkSubpassDependency dependencies[2]{};
@@ -167,7 +191,7 @@ void VulkanContext::CreateAAResources(VkFormat format)
     dependencies[1].dstSubpass = VK_SUBPASS_EXTERNAL;
     dependencies[1].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
     VkRenderPassCreateInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO};
-    pass.attachmentCount = _worldSamples == VK_SAMPLE_COUNT_1_BIT ? 2 : 3;
+    pass.attachmentCount = temporal || _worldSamples != VK_SAMPLE_COUNT_1_BIT ? 3 : 2;
     pass.pAttachments = attachments;
     pass.subpassCount = 1;
     pass.pSubpasses = &subpass;
@@ -177,24 +201,36 @@ void VulkanContext::CreateAAResources(VkFormat format)
     color.loadOp = depth.loadOp = depth.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
     color.initialLayout = color.finalLayout;
     depth.initialLayout = depth.finalLayout;
+    if (temporal)
+    {
+        attachments[2].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+        attachments[2].initialLayout = attachments[2].finalLayout;
+    }
     Require(vkCreateRenderPass(_device, &pass, nullptr, &_worldResume), "create world resume");
     // SMAA's discard in edge detection requires a zero-cleared intermediate.
     color.samples = VK_SAMPLE_COUNT_1_BIT;
     color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     color.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     pass.attachmentCount = 1;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorRef;
     subpass.pResolveAttachments = nullptr;
     subpass.pDepthStencilAttachment = nullptr;
     Require(vkCreateRenderPass(_device, &pass, nullptr, &_aaPass), "create AA pass");
     color.format = VK_FORMAT_R8G8B8A8_UNORM;
     Require(vkCreateRenderPass(_device, &pass, nullptr, &_aaDataPass), "create AA weights pass");
+    if (temporal)
+    {
+        color.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+        Require(vkCreateRenderPass(_device, &pass, nullptr, &_taaPass), "create temporal history pass");
+    }
 
     VkSamplerCreateInfo sampler{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     sampler.magFilter = sampler.minFilter = VK_FILTER_LINEAR;
     sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
     sampler.addressModeU = sampler.addressModeV = sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     Require(vkCreateSampler(_device, &sampler, nullptr, &_aaSampler), "create AA sampler");
-    const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, uint32_t(_images.size() * 5 + 2)};
+    const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, uint32_t(_images.size() * 6 + 4)};
     VkDescriptorPoolCreateInfo pool{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     pool.maxSets = size.descriptorCount;
     pool.poolSizeCount = 1;
@@ -243,12 +279,18 @@ void VulkanContext::CreateAAResources(VkFormat format)
         descriptor(target.color.view, false, target.colorSet);
         descriptor(target.sampledDepth, true, target.depthSet);
         VkImageView views[]{target.color.view, target.depth.view, target.color.view};
+        if (temporal)
+        {
+            CreateAAImage(target.motion, VK_FORMAT_R16G16B16A16_SFLOAT, colorUsage, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+            descriptor(target.motion.view, false, target.motionSet);
+            views[2] = target.motion.view;
+        }
         if (_worldSamples != VK_SAMPLE_COUNT_1_BIT)
         {
             CreateAAImage(target.multisample, format, colorUsage, _worldSamples, VK_IMAGE_ASPECT_COLOR_BIT);
             views[0] = target.multisample.view;
         }
-        framebuffer(_worldPass, views, _worldSamples == VK_SAMPLE_COUNT_1_BIT ? 2 : 3, target.scene);
+        framebuffer(_worldPass, views, temporal || _worldSamples != VK_SAMPLE_COUNT_1_BIT ? 3 : 2, target.scene);
         framebuffer(_ssaoPass, &target.color.view, 1, target.ao);
         if (_renderScale != 100 && (_aaMode == AAMode::FXAA || _aaMode == AAMode::SMAA))
         {
@@ -268,6 +310,13 @@ void VulkanContext::CreateAAResources(VkFormat format)
             framebuffer(_aaDataPass, &target.weights.view, 1, target.weightFB);
         }
     }
+    if (temporal)
+        for (auto& history : _taaHistory)
+        {
+            CreateAAImage(history.color, VK_FORMAT_R16G16B16A16_SFLOAT, colorUsage, VK_SAMPLE_COUNT_1_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+            descriptor(history.color.view, false, history.set);
+            framebuffer(_taaPass, &history.color.view, 1, history.framebuffer);
+        }
     if (_aaMode == AAMode::SMAA && !_smaaArea)
     {
         std::vector<unsigned char> bytes(AREATEX_WIDTH * AREATEX_HEIGHT * 4, 255);
@@ -297,12 +346,13 @@ void VulkanContext::CreateAAResources(VkFormat format)
     layout.pPushConstantRanges = &push;
     Require(vkCreatePipelineLayout(_device, &layout, nullptr, &_aaLayout), "create AA layout");
     const uint32_t* codes[]{Cwrfxaa_frag, Cwrsmaa_edge_frag, Cwrsmaa_weight_frag, Cwrsmaa_blend_frag,
-                            _worldSamples == VK_SAMPLE_COUNT_1_BIT ? Cwraa_composite_frag : Cwraa_composite_ms_frag};
+                            _worldSamples == VK_SAMPLE_COUNT_1_BIT ? Cwraa_composite_frag : Cwraa_composite_ms_frag, Cwrtaa_frag};
     const size_t sizes[]{
         sizeof(Cwrfxaa_frag), sizeof(Cwrsmaa_edge_frag), sizeof(Cwrsmaa_weight_frag), sizeof(Cwrsmaa_blend_frag),
-        _worldSamples == VK_SAMPLE_COUNT_1_BIT ? sizeof(Cwraa_composite_frag) : sizeof(Cwraa_composite_ms_frag)};
-    for (unsigned i = 0; i < 5; ++i)
+        _worldSamples == VK_SAMPLE_COUNT_1_BIT ? sizeof(Cwraa_composite_frag) : sizeof(Cwraa_composite_ms_frag), sizeof(Cwrtaa_frag)};
+    for (unsigned i = 0; i < 6; ++i)
     {
+        if (i == 5 && !temporal) continue;
         if (i == 0 && _aaMode != AAMode::FXAA)
             continue;
         if (i > 0 && i < 4 && _aaMode != AAMode::SMAA)
@@ -361,7 +411,7 @@ void VulkanContext::CreateAAResources(VkFormat format)
             pipeline.pDepthStencilState = &ds;
             pipeline.pDynamicState = &dynamic;
             pipeline.layout = _aaLayout;
-            pipeline.renderPass = composite ? _resumePass : (i == 1 || i == 2) ? _aaDataPass : _aaPass;
+            pipeline.renderPass = composite ? _resumePass : i == 5 ? _taaPass : (i == 1 || i == 2) ? _aaDataPass : _aaPass;
             Require(vkCreateGraphicsPipelines(_device, VK_NULL_HANDLE, 1, &pipeline, nullptr, &_aaPipelines[i]),
                     "create AA pipeline");
         }
@@ -387,16 +437,45 @@ void VulkanContext::BeginAAWorld()
     FlushScreenBatch();
     auto command = _frames[_frame].command;
     vkCmdEndRenderPass(command);
+    if (_aaMode == AAMode::TAA)
+    {
+        if (!_taaInitialized)
+        {
+            VkImageMemoryBarrier barriers[2]{};
+            for (int i = 0; i < 2; ++i)
+            {
+                auto& b = barriers[i];
+                b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+                b.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+                b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+                b.image = _taaHistory[i].color.image;
+                b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT,0,1,0,1};
+            }
+            vkCmdPipelineBarrier(command,VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                                 0,0,nullptr,0,nullptr,2,barriers);
+            _taaInitialized = true;
+        }
+        auto halton = [](unsigned index, unsigned base)
+        {
+            float result=0, f=1;
+            while(index) { f/=base; result+=f*(index%base); index/=base; }
+            return result;
+        };
+        const unsigned sample = (++_taaFrame % 8) + 1;
+        _taaJitter = {2*(halton(sample,2)-.5f)/_worldExtent.width, 2*(halton(sample,3)-.5f)/_worldExtent.height};
+    }
     _worldActive = _worldPassOpen = true;
     _commands = {};
-    VkClearValue clears[2]{};
+    VkClearValue clears[3]{};
     std::copy(_clearColor.begin(), _clearColor.end(), clears[0].color.float32);
     clears[1].depthStencil.depth = 1;
     VkRenderPassBeginInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
     pass.renderPass = _worldPass;
     pass.framebuffer = SceneFramebuffer();
     pass.renderArea.extent = _worldExtent;
-    pass.clearValueCount = 2;
+    pass.clearValueCount = _aaMode == AAMode::TAA ? 3 : 2;
     pass.pClearValues = clears;
     vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
 }
@@ -408,7 +487,7 @@ void VulkanContext::DrawAAPass(unsigned index, VkFramebuffer framebuffer, VkDesc
     const bool composite = index == 4 || (_renderScale == 100 && (index == 0 || index == 3));
     VkClearValue clear{};
     VkRenderPassBeginInfo pass{VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO};
-    pass.renderPass = composite ? _resumePass : (index == 1 || index == 2) ? _aaDataPass : _aaPass;
+    pass.renderPass = composite ? _resumePass : index == 5 ? _taaPass : (index == 1 || index == 2) ? _aaDataPass : _aaPass;
     pass.framebuffer = framebuffer;
     pass.renderArea.extent = extent;
     pass.clearValueCount = composite ? 0 : 1;
@@ -416,15 +495,21 @@ void VulkanContext::DrawAAPass(unsigned index, VkFramebuffer framebuffer, VkDesc
     vkCmdBeginRenderPass(command, &pass, VK_SUBPASS_CONTENTS_INLINE);
     vkCmdBindPipeline(command, VK_PIPELINE_BIND_POINT_GRAPHICS, _aaPipelines[index]);
     const VkDescriptorSet sets[]{source, index == 3 ? target.weightsSet : target.depthSet,
-                                 index == 2 ? _smaaAreaSet : target.depthSet, index == 2 ? _smaaSearchSet : source};
+                                 index == 5 ? target.motionSet : index == 2 ? _smaaAreaSet : target.depthSet,
+                                 index == 5 ? _taaHistory[1-_taaIndex].set : index == 2 ? _smaaSearchSet : source};
     vkCmdBindDescriptorSets(command, VK_PIPELINE_BIND_POINT_GRAPHICS, _aaLayout, 0, 4, sets, 0, nullptr);
     const VkViewport viewport{0, 0, float(extent.width), float(extent.height), 0, 1};
     const VkRect2D scissor{{0, 0}, extent};
     vkCmdSetViewport(command, 0, 1, &viewport);
     vkCmdSetScissor(command, 0, 1, &scissor);
-    const float push[]{1.f / _worldExtent.width,   1.f / _worldExtent.height, float(_worldExtent.width),
+    float push[]{1.f / _worldExtent.width,   1.f / _worldExtent.height, float(_worldExtent.width),
                        float(_worldExtent.height), 1.f / _extent.width,       1.f / _extent.height,
                        float(_extent.width),       float(_extent.height)};
+    if (index == 5)
+    {
+        push[4]=_taaProjection[2]; push[5]=_taaProjection[3];
+        push[6]=_taaValid ? 1.f : 0.f; push[7]=_motionDebug ? 1.f : 0.f;
+    }
     vkCmdPushConstants(command, _aaLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), push);
     vkCmdDraw(command, 3, 1, 0, 0);
     // Composite leaves the native-resolution pass open for cockpit/HUD/UI.
@@ -445,6 +530,22 @@ void VulkanContext::FinishAAWorld(const std::array<float, 4>& projection)
     _worldPassOpen = false;
     auto& target = _aaTargets[_image];
     VkDescriptorSet source = target.colorSet;
+    if (_aaMode == AAMode::TAA)
+    {
+        _taaProjection = projection;
+        auto& frame = _frames[_frame];
+        if (frame.frameQueries)
+            vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, frame.frameQueries, 2);
+        DrawAAPass(5, _taaHistory[_taaIndex].framebuffer, source, _worldExtent);
+        if (frame.frameQueries)
+        {
+            vkCmdWriteTimestamp(command, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, frame.frameQueries, 3);
+            frame.taaTimestamped = true;
+        }
+        source = _taaHistory[_taaIndex].set;
+        _taaIndex = 1-_taaIndex;
+        _taaValid = true;
+    }
     const auto destination = _renderScale == 100 ? _framebuffers[_image] : target.filterFB;
     if (_aaMode == AAMode::FXAA)
     {
@@ -466,6 +567,8 @@ void VulkanContext::FinishAAWorld(const std::array<float, 4>& projection)
 void VulkanContext::DestroyAAResources() noexcept
 {
     _worldActive = _worldPassOpen = false;
+    _taaValid = _taaInitialized = false;
+    _taaIndex = _taaFrame = 0;
     auto destroyPipelines = [&](auto& pipelines)
     {
         for (auto& p : pipelines)
@@ -497,7 +600,7 @@ void VulkanContext::DestroyAAResources() noexcept
         if (target.sampledDepth)
             vkDestroyImageView(_device, target.sampledDepth, nullptr);
         for (auto* image :
-             {&target.color, &target.depth, &target.multisample, &target.edges, &target.weights, &target.filtered})
+             {&target.color, &target.depth, &target.multisample, &target.edges, &target.weights, &target.filtered, &target.motion})
         {
             if (image->view)
                 vkDestroyImageView(_device, image->view, nullptr);
@@ -508,9 +611,18 @@ void VulkanContext::DestroyAAResources() noexcept
         }
     }
     _aaTargets.clear();
-    for (auto pass : {_worldPass, _worldResume, _aaPass, _aaDataPass})
+    for (auto& history : _taaHistory)
+    {
+        if (history.framebuffer) vkDestroyFramebuffer(_device,history.framebuffer,nullptr);
+        if (history.color.view) vkDestroyImageView(_device,history.color.view,nullptr);
+        if (history.color.image) vkDestroyImage(_device,history.color.image,nullptr);
+        if (history.color.memory) vkFreeMemory(_device,history.color.memory,nullptr);
+        history = {};
+    }
+    for (auto pass : {_worldPass, _worldResume, _aaPass, _aaDataPass, _taaPass})
         if (pass)
             vkDestroyRenderPass(_device, pass, nullptr);
     _worldPass = _worldResume = _aaPass = _aaDataPass = VK_NULL_HANDLE;
+    _taaPass = VK_NULL_HANDLE;
 }
 } // namespace Poseidon::vk

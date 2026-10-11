@@ -1100,6 +1100,7 @@ void World::VehicleSwitched(Object* from, Object* to)
 
 void World::SwitchCameraTo(Object* vehicle, CameraType camType)
 {
+    if (GEngine && (vehicle != CameraOn() || camType != GetCameraType())) GEngine->ResetTemporalHistory();
     bool change = (vehicle != _cameraOn);
     float changeDist2 = 1e10;
     if (vehicle && _cameraOn)
@@ -1357,6 +1358,7 @@ void World::DisableUserInput(bool disable)
 
 void World::SetCameraEffect(CameraEffect* effect)
 {
+    if (GEngine) GEngine->ResetTemporalHistory();
     _cameraEffect = effect;
     _nearImportanceDistributionTime = Glob.time - 60;
     _farImportanceDistributionTime = Glob.time - 60;

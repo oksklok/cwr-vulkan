@@ -1,17 +1,19 @@
 # Vulkan backend development
 
-## Optional spatial anti-aliasing and world render scale (2026-10-11)
+## Optional anti-aliasing and world render scale (2026-10-11)
 
-**Partial roster, not a complete temporal-AA suite:** Off (default), FXAA,
-SMAA 1x and MSAA 2x/4x/8x are implemented. Independent world render scales are
-100% (default), 125%, 150% and 200%. TAA is **unsupported**. Vulkan remains
+Off (default), FXAA, SMAA 1x, TAA and MSAA 2x/4x/8x are implemented.
+Independent world render scales are 100% (default), 125%, 150% and 200%. TAA is
+opt-in, with real instance/deformation motion history. Vulkan remains
 opt-in; GL33 rendering, assets, localization and gameplay behavior are unchanged.
 There is no graphics menu, upscaler, dynamic resolution or AA stacking.
 
 Developer evaluator commands (process-local, not persisted):
 
 ```sqf
-triAA "off"       // also "fxaa", "smaa", "msaa2", "msaa4", "msaa8"
+triAA "off"       // also "fxaa", "smaa", "taa", "msaa2", "msaa4", "msaa8"
+triAA "motion"    // visualize velocity/rejection while taa is selected
+triAA "motion-off"
 triRenderScale 150
 triAA "status"    // actual/requested mode, actual/requested scale, sample mask
 ```
@@ -19,8 +21,9 @@ triAA "status"    // actual/requested mode, actual/requested scale, sample mask
 Mode changes report `OK` and take effect at the next frame's existing
 idle/recreation boundary. Unsupported sample counts return `UNSUPPORTED` and
 retain the previous selection; they never silently become a different mode.
-Invalid scales return false. `triAA "taa"` reports its missing motion-history
-contract. GL33 reports unsupported for these commands. Capabilities intersect
+Invalid scales return false. TAA requires independent attachment blending;
+unsupported devices retain their previous mode. GL33 reports unsupported for
+these commands. Capabilities intersect
 the exact color and sampled depth/stencil image formats with device framebuffer
 and sampled-depth sample-count limits. The RTX 4060 Ti reports 1/2/4/8 support.
 
@@ -63,27 +66,80 @@ so a later resolve cannot overwrite AO. CSM resumes the correct world target
 and sample-count pipeline bank. Every boundary invalidates cached draw bindings.
 FXAA and SMAA at 100% write directly into the native scene, avoiding an extra
 full-frame copy; scaled post-AA uses one reusable intermediate before downsampling.
-All target resources follow swapchain lifetime; nothing is allocated per frame.
+All GPU target resources follow swapchain lifetime; no GPU history images are
+allocated per frame. CPU temporal geometry records are rebuilt each world frame.
 
-### TAA blocker and limitations
+### Temporal motion contract and resolve
 
-There is no TAA implementation or hidden frame-blending substitute. Native
-`PrepareMeshTL` receives a current model transform, and `BeginMeshTL` a shared
-Shape, not a stable rendered-object instance identity. The latter uploads current animated
-vertices; software `BeginMesh` receives an already transformed/clipped transient
-TL table. Neither stream carries previous deformed positions or stable clipped
-vertex correspondence. Recovering world positions from depth would cover camera
-motion and static terrain, but would incorrectly reproject moving vehicles,
-soldiers, animated foliage and newly exposed surfaces. Shape/buffer addresses
-cannot distinguish multiple instances, LOD changes or recycled transient pages.
+The previous milestone's missing engine contract is now implemented, not replaced
+by camera-only depth reprojection. `Object::_id` is unsuitable: it can be -1,
+assigned again by landscape/load code, and changed by `SetID`. Object addresses
+are recycled, and both Shapes and model proxy Objects are shared. A small
+process-local 64-bit `RenderIdentity` member in Object and Shape gives every
+lifetime/copy a fresh identity, independent of serialization. `Object::Draw`
+pushes/pops the entire parent/proxy instance path through default-no-op Engine
+hooks. GL33 ignores these hooks; no save format or stock asset changes are needed.
 
-A correct TAA implementation therefore needs persistent instance identity,
-previous transforms/deformation before clipping, motion/reactivity output for
-both geometry routes, and scene/save-load/view discontinuity generations across
-the scene-to-renderer boundary. Those contracts are absent from this renderer.
-Adding camera jitter and accumulation alone would violate the moving-object
-requirement, so TAA and SMAA+TAA are explicitly unavailable. This requested part
-remains unfinished.
+- Native immutable Vulkan meshes retain their actual previous MVP, keyed by
+  full object path and Shape lifetime (including LOD). This path is not claimed
+  to animate vertices: stock animated vehicles/soldiers use the software path.
+- Software TL captures the actual post-animation, pre-clipping vertex positions
+  in `FaceArray::Draw`. Previous homogeneous clip positions are retained by
+  path, Shape and indexed topology; this includes soldier pose, turret, wheels,
+  rotor and billboard transforms. Both CPU clip interpolation overloads carry
+  the optional previous-position sidecar using the same intersection fraction.
+  Pixel-projection conversion avoids applying camera FOV twice.
+- Terrain and explicitly static terrain-fitted objects/roads reproject their
+  known stationary world positions, including generated/clipped vertices.
+  This static-world treatment is not applied to arbitrary moving objects.
+- First appearance, changed LOD/topology, missing correspondence, ambiguous
+  repeated instance draws, and unsupported effects reject history. Histories
+  retain only consecutive world frames, not a persistent entity registry.
+
+The world pass writes RGBA16F motion: XY is **previous UV minus current UV**,
+including current/previous jitter, Z is expected previous-camera view depth in
+meters, and W is 1 for valid opaque, .75 for valid cutout, 0 for unavailable, or
+-1 for reactive coverage. Current sampled depth, jitter and validity are kept
+separate from color. This is a usable future reconstruction input contract, not
+an integration of DLSS/DLAA/FSR. Debug view maps XY displacement to red/green
+around gray (80x UV scale); magenta means rejected, not zero velocity. HUD and
+cockpit remain their normal colors. Debug switching also invalidates history.
+
+TAA uses an eight-sample Halton(2,3) world-only projection jitter, two shared
+RGBA16F history images on the existing graphics queue, nearest-depth velocity
+dilation, previous-view-depth/disocclusion rejection, 3x3 YCoCg neighborhood and
+variance clamping, velocity/luminance-sensitive history weighting, and bounded
+8% detail restoration. History alpha stores view depth with a negative sign for
+unreliable color, preventing reuse after smoke/water moves away. Sky has no
+invented motion; only an immediate foreground edge can supply valid coverage.
+SSAO resolves before TAA; downsampling and native overlays follow it; final
+gamma remains last. Existing command buffers, frame fences, attachment resume
+passes and swapchain recreation own all resources.
+
+Alpha-tested foliage uses deformation motion and a lower history weight.
+Partially transparent texels, smoke, water, additive/no-depth effects and
+untracked draws reject history (including a one-pixel reactive border). Opaque
+texels in stock blend-classified materials retain valid motion: rejecting the
+entire texture would incorrectly exclude many stock buildings and plants.
+Projected shadows preserve the receiver's velocity, with luminance/neighborhood
+clamping for changing shadow color; they do not get fictitious caster velocity.
+
+Camera subject/type changes, camera-effect changes, zero-time scripted camera
+commits, scripted setPos/setPosASL/setDir on the camera subject (even small
+teleports), large positional/directional/FOV discontinuities, NVG switching,
+save loading, world cleanup, missing world frames, resize/scale recreation and
+AA switching invalidate history. CPU history caches and GPU history validity
+are independently gated, so stale records cannot make a reset frame valid.
+
+### Limitations
+
+Unsupported effects remain spatially sampled and can shimmer; smoke/transparency
+are deliberately not accumulated. Sky/cloud texture animation and moving shadow
+color have no independent velocity. Very thin fences, disoccluded edges and LOD
+changes can still flicker, and TAA trades some fine texture contrast for stability.
+It is not a promise of trail-free behavior for every mod/effect. No temporal
+filter touches native cockpit instruments, weapons, HUD, menus or map text.
+There is no SMAA+TAA stacking or vendor upscaler.
 
 Spatial AA reduces visible stair steps but cannot provide temporal stability.
 Fine foliage and thin geometry can still shimmer in motion; MSAA does not
@@ -93,7 +149,78 @@ Qualification is on the normal Windows UNORM swapchain; other GPUs and the sRGB
 surface fallback are unqualified. Mode/scale changes reuse the existing
 device-idle recreation and can hitch while pipelines/resources are rebuilt.
 
-### Verification and performance
+### TAA verification and performance
+
+Vulkan-enabled and GL33-only RelWithDebInfo builds pass. Both pass the existing
+`[vulkan-shape],[ShadowMath],[Conventions],[ShutdownOrder]` suites: 74 cases,
+812 assertions, including new identity-reuse/copy, software projection and
+homogeneous clipping checks. The Vulkan driver-free policy/lifetime executable
+passes 311 checks; its intentional teardown-error fixture is not a live error.
+
+Stock gameplay was exercised at 1920x1080 on RTX 4060 Ti / driver 617.14,
+using isolated profiles and actual bounded keyboard/mouse input. Motion debug
+was inspected before TAA color. Captures include consecutive 90-frame image
+sequences (roughly 15-18 captured frames/second, not lossless 60-fps video).
+Off/SMAA/TAA infantry comparisons reset position/direction but are not lockstep
+AI replays; smoke, enemies and camera easing vary between sequences.
+
+| Scene / local evidence run | Checks actually exercised |
+| --- | --- |
+| `taa-quality-infantry` | Independent soldier/limb/weapon vectors; running, firing enemies, blood/smoke, village foliage, fences and roofs; moving Off/SMAA/TAA image sequences |
+| `taa-hmmwv` | Approximately 96 m driving over two bounded sequences; vehicle versus terrain velocity, dust rejection; TAA + SSAO/CSM, native cockpit at 150% world scale |
+| `taa-tank` | Independent turret/hull velocity, turret aiming, about 11.6 m driving; optics and cannon fire (24 to 23 rounds), smoke; SSAO/CSM |
+| `taa-cobra` | Rotor startup, takeoff from ground to 38.7 m, forward flight; cockpit/exterior switching, 125% scale, SSAO/CSM; translucent fast-rotor coverage rejected |
+| `taa-night` | Night/NVG running; TAA + SSAO/CSM; 200% scale, resize to 960x640, minimize/restore |
+| `taa-menu-save` | Main menu to stock Ambush intro/briefing/gameplay; ordinary menu Save/Load at TAA 150%; saved XY [8089.76,5153.36] restored after movement; map text; shoreline water/fog, scripted camera cut/teleport, SMAA/MSAA4/TAA switching |
+
+Those six runs all closed normally (exit 0) with **zero core/synchronization
+validation errors and warnings**. `taa-final-night` additionally exercises the
+final small-teleport/NVG reset changes with GPU profiling disabled, covering
+the ordinary acquire-semaphore wait path; firing/reload was checked (30 to 29
+rounds), and its 9,338-frame shutdown also had zero validation warnings/errors.
+`taa-gl33` launched the GL33-only binary with no renderer switch, exercised
+stock infantry movement, rejected the Vulkan-only commands, and exited 0.
+The host loader still reports its pre-existing stale Epic overlay manifest and
+disabled third-party layers; these are distinct from Khronos validation output.
+Local PNG sequences, action logs,
+binary hashes, validation logs and timing JSON are in ignored
+`build/shadow-live/taa-*`, not in the shipped assets.
+
+Visual inspection found noticeably steadier foliage/roof edges than Off and
+SMAA during the captured movement, with a modest loss of fine texture contrast,
+not a blanket blur. No persistent soldier, vehicle or turret silhouette trails
+were observed in the inspected sequences. Disocclusions reject instead of
+dragging the old silhouette; smoke/water remain unfiltered. Native cockpit,
+weapon, NVG overlay, HUD, briefing and map text stay sharp. This is bounded
+stock-gameplay qualification on one GPU, not exhaustive coverage of every
+animation, effect, frame rate or mod. The limitations above still apply.
+
+`taa-perf` repeats Off/SMAA/TAA twice in the same frozen village setup used
+below, native 1080p, projected shadows on, SSAO/CSM off, validation off. Each
+mode settles for 14 seconds; the last four two-second profiler windows are
+averaged. Existing frame timestamps include world draws, composition, overlays
+and final gamma; new timestamps isolate the TAA resolve and are read only after
+the existing frame fence, without a new wait.
+
+| Mode | Whole-frame GPU ms, run 1 / run 2 | TAA resolve ms |
+| --- | --- | --- |
+| Off | 0.961 / 0.849 | — |
+| SMAA | 1.369 / 1.426 | — |
+| TAA | 1.543 / 1.546 | 0.351 / 0.351 |
+
+Practical TAA overhead here is about 0.58-0.70 ms versus Off and 0.12-0.17 ms
+versus SMAA, including motion output/world-target overhead, not just the resolve.
+Automatic graphics clocks differed (Off 465/585 MHz, SMAA 705 MHz, TAA 825 MHz;
+memory 810 or 5001 MHz). No clocks/power settings were forced. Consequently
+these are practical elapsed GPU intervals, not fixed-clock throughput or a
+guaranteed FPS gain/loss. Scaling increases both motion/history bandwidth and
+resolve work. CPU per-instance/deformation bookkeeping also has a cost; the
+renderer is not claimed to be GPU-limited in this scene.
+
+### Earlier spatial-AA verification and performance
+
+The results in this subsection predate the temporal implementation; references
+to TAA rejection below describe that earlier executable, not the current mode.
 
 Both Vulkan-enabled and GL33-only RelWithDebInfo builds pass. Each configuration
 passes the existing `[vulkan-shape],[ShadowMath],[Conventions],[ShutdownOrder]`
@@ -140,8 +267,8 @@ cutout boundaries without applying a texture-wide post-filter. Fractional and
 cockpit instruments and weapon overlays remain sharp/native. No missing world,
 stencil-shadow leak, broken water/NVG, or overlay filtering was observed in
 these runs. This is not a claim of shimmer-free motion: spatial modes have no
-history, and distant leaves/wires can still pop or sparkle. There is no TAA
-ghosting result because TAA does not exist in this implementation.
+history, and distant leaves/wires can still pop or sparkle. This earlier run
+did not assess TAA ghosting.
 
 The physical device supports every requested MSAA count. Unsupported-count
 behavior is covered by the driver-free test (explicit rejection and previous

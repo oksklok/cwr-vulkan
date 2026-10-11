@@ -350,8 +350,10 @@ int main()
         Check(context.SetAntiAliasing("fxaa").find("OK:") == 0, "queue FXAA selection");
         const auto requested = context.SetAntiAliasing("status");
         Check(context.SetAntiAliasing("msaa8").find("UNSUPPORTED:") == 0, "unsupported samples fail explicitly");
-        Check(context.SetAntiAliasing("taa").find("UNSUPPORTED:") == 0, "no fake temporal AA fallback");
         Check(context.SetAntiAliasing("status") == requested, "failed AA selections retain previous request");
+        Check(context.SetAntiAliasing("taa").find("OK:") == 0, "queue motion-based temporal AA");
+        Check(context.SetAntiAliasing("motion").find("OK:") == 0, "motion visualization is explicit");
+        Check(context.SetAntiAliasing("motion-off").find("OK:") == 0, "disable motion visualization");
         Check(context.SetAntiAliasing("smaa+taa").find("INVALID:") == 0, "no implicit stacking");
         Check(!context.SetRenderScale(150), "scale needs a device before limits query");
         for (int scale : {100,125,150,200}) Check(ValidRenderScale(scale), "supported render scale");

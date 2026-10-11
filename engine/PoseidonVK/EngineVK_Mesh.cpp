@@ -122,6 +122,7 @@ void EngineVK::PrepareMeshTL(const LightList& lights, const Matrix4& modelToWorl
         Unsupported("Shape render flags outside opaque untextured/IsColored");
     }
     const auto* camera = GScene->GetCamera();
+    _shapeModelWorld = modelToWorld;
     _shapeFlags = render::MergeLegacy(spec);
     Matrix4 relative = modelToWorld;
     relative.SetPosition(modelToWorld.Position() - camera->Position());
@@ -151,6 +152,7 @@ void EngineVK::BeginMeshTL(const Shape& shape, int spec, bool dynamic)
     if (!buffer)
         throw std::logic_error("Vulkan Shape: mesh has no Vulkan vertex buffer");
     buffer->Update(shape, dynamic);
+    CaptureTemporalNative(shape);
     _activeShape = &shape;
 }
 

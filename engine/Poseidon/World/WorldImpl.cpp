@@ -1654,6 +1654,7 @@ namespace Poseidon
 {
 LSError World::Serialize(ParamArchive& ar, int message)
 {
+    if (!ar.IsSaving() && GEngine) GEngine->ResetTemporalHistory();
     if (ar.IsSaving())
     {
         ProgressReset();

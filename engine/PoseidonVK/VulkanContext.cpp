@@ -282,6 +282,7 @@ void VulkanContext::CreateDevice(VkSurfaceKHR surface)
     VkPhysicalDeviceFeatures availableFeatures{}, features{};
     vkGetPhysicalDeviceFeatures(_physical, &availableFeatures);
     features.samplerAnisotropy = availableFeatures.samplerAnisotropy;
+    features.independentBlend = availableFeatures.independentBlend;
     info.pEnabledFeatures = &features;
     VkPhysicalDeviceProperties properties{};
     vkGetPhysicalDeviceProperties(_physical, &properties);
@@ -339,7 +340,9 @@ void VulkanContext::CreateFrameResources()
             queries.queryType = VK_QUERY_TYPE_TIMESTAMP;
             queries.queryCount = 2;
             Check(vkCreateQueryPool(_device, &queries, nullptr, &frame.ssaoQueries), "create AO timestamps");
+            queries.queryCount = 4;
             Check(vkCreateQueryPool(_device, &queries, nullptr, &frame.frameQueries), "create frame GPU timestamps");
+            queries.queryCount = 2;
             Check(vkCreateQueryPool(_device, &queries, nullptr, &frame.csmQueries), "create CSM timestamps");
         }
         const auto prefix = "PoseidonVK frame " + std::to_string(i);
@@ -639,6 +642,18 @@ bool VulkanContext::BeginFrame(uint32_t width, uint32_t height)
         }
         frame.frameTimestamped = false;
     }
+    if (frame.taaTimestamped)
+    {
+        uint64_t stamps[2]{};
+        if (vkGetQueryPoolResults(_device, frame.frameQueries, 2, 2, sizeof(stamps), stamps,
+                                 sizeof(uint64_t), VK_QUERY_RESULT_64_BIT) == VK_SUCCESS)
+        {
+            const uint64_t mask = _timestampBits == 64 ? UINT64_MAX : (uint64_t(1) << _timestampBits) - 1;
+            _profile.taaGpuMs += double((stamps[1]-stamps[0]) & mask)*_timestampPeriod/1e6;
+            ++_profile.taaGpuSamples;
+        }
+        frame.taaTimestamped = false;
+    }
     if (frame.ssaoTimestamped)
     {
         uint64_t stamps[2]{};
@@ -701,7 +716,7 @@ bool VulkanContext::BeginFrame(uint32_t width, uint32_t height)
     Check(vkBeginCommandBuffer(frame.command, &commands), "begin frame command buffer");
     if (frame.frameQueries)
     {
-        vkCmdResetQueryPool(frame.command, frame.frameQueries, 0, 2);
+        vkCmdResetQueryPool(frame.command, frame.frameQueries, 0, 4);
         vkCmdWriteTimestamp(frame.command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, frame.frameQueries, 0);
     }
     VkClearValue clears[2]{};
@@ -888,6 +903,10 @@ void VulkanContext::ReportProfile()
         _profile.csmPasses / frames, _profile.csmVertices / frames,
         _profile.csmGpuSamples ? _profile.csmGpuMs / _profile.csmGpuSamples : -1.0,
         static_cast<unsigned long long>(_profile.csmGpuSamples));
+    if (_profile.taaGpuSamples)
+        std::fprintf(stderr, "Vulkan TAA: resolve_gpu_ms=%.4f samples=%llu\n",
+                     _profile.taaGpuMs/_profile.taaGpuSamples,
+                     static_cast<unsigned long long>(_profile.taaGpuSamples));
     std::fprintf(stderr, "Vulkan SSAO: enabled=%d passes/frame=%.2f record_ms/frame=%.4f gpu_ms/pass=%.4f gpu_samples=%llu radius=%.2f strength=%.2f bias=%.3f fade=%.1f\n",
                  int(_ssaoEnabled), _profile.ssaoPasses / frames, _profile.ssaoMs / frames,
                  _profile.ssaoGpuSamples ? _profile.ssaoGpuMs / _profile.ssaoGpuSamples : -1.0,

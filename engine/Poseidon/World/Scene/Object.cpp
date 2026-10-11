@@ -836,6 +836,13 @@ void Object::DrawProxies(int level, ClipFlags clipFlags, const Matrix4& transfor
 // Object::DrawProxies and draws the given LOD level via Shape::Draw.
 void Object::Draw(int forceLOD, ClipFlags clipFlags, const FrameBase& pos)
 {
+    // Nested scopes identify shared model proxies by their full parent path.
+    struct RenderScope
+    {
+        Engine* engine;
+        ~RenderScope() { engine->PopRenderInstance(); }
+    } renderScope{GEngine};
+    GEngine->PushRenderInstance(_renderIdentity.Get());
     if (!_shape)
     {
         return;
@@ -927,6 +934,8 @@ void Object::Draw(int forceLOD, ClipFlags clipFlags, const FrameBase& pos)
         // perform actual drawing
 
         // if neccessary, split it
+        const bool stationarySurface = Static() && (special & (OnSurface | IsOnSurface));
+        if (stationarySurface) GEngine->SetTemporalTerrain(true);
         if (render::Has(specT.routing, render::Routing::OnSurface) &&
             (sShape->GetAndHints() & ClipLandMask) == ClipLandOn)
         {
@@ -941,6 +950,7 @@ void Object::Draw(int forceLOD, ClipFlags clipFlags, const FrameBase& pos)
         }
 
         GScene->SetConstantFog(-1);
+        if (stationarySurface) GEngine->SetTemporalTerrain(false);
     }
     Deanimate(forceLOD);
 }

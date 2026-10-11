@@ -147,6 +147,10 @@ class VulkanContext
     bool SetRenderScale(int percent);
     void BeginAAWorld();
     void FinishAAWorld(const std::array<float, 4>& projection);
+    bool TemporalEnabled() const { return _aaMode == AAMode::TAA && _worldActive; }
+    bool TemporalHistoryValid() const { return _taaValid; }
+    void ResetTemporalHistory() { _taaValid = false; }
+    std::array<float, 2> TemporalJitter() const { return _taaJitter; }
     bool FrameOpen() const { return _frameOpen; }
     VkExtent2D Extent() const { return _extent; }
     const std::string& DeviceName() const { return _deviceName; }
@@ -196,6 +200,8 @@ class VulkanContext
         double ssaoMs = 0, ssaoGpuMs = 0;
         double gpuMs = 0;
         uint64_t gpuSamples = 0;
+        double taaGpuMs = 0;
+        uint64_t taaGpuSamples = 0;
         uint64_t ssaoPasses = 0, ssaoGpuSamples = 0;
         double csmGpuMs = 0;
         uint64_t csmPasses = 0, csmGpuSamples = 0, csmVertices = 0;
@@ -236,6 +242,7 @@ class VulkanContext
         VkQueryPool ssaoQueries = VK_NULL_HANDLE;
         VkQueryPool frameQueries = VK_NULL_HANDLE;
         bool frameTimestamped = false;
+        bool taaTimestamped = false;
         bool ssaoTimestamped = false;
         VkQueryPool csmQueries = VK_NULL_HANDLE;
         bool csmTimestamped = false;
@@ -308,7 +315,8 @@ class VulkanContext
     };
     struct AATarget
     {
-        DepthAttachment color, depth, multisample, edges, weights, filtered;
+        DepthAttachment color, depth, multisample, edges, weights, filtered, motion;
+        VkDescriptorSet motionSet = VK_NULL_HANDLE;
         VkImageView sampledDepth = VK_NULL_HANDLE;
         VkDescriptorSet colorSet = VK_NULL_HANDLE, depthSet = VK_NULL_HANDLE;
         VkDescriptorSet edgesSet = VK_NULL_HANDLE, weightsSet = VK_NULL_HANDLE, filteredSet = VK_NULL_HANDLE;
@@ -328,7 +336,19 @@ class VulkanContext
     VkPipelineLayout _aaLayout = VK_NULL_HANDLE;
     VkSampler _aaSampler = VK_NULL_HANDLE;
     // FXAA, SMAA edge/weights/neighborhood, world composite.
-    std::array<VkPipeline, 5> _aaPipelines{};
+    std::array<VkPipeline, 6> _aaPipelines{};
+    struct TemporalTarget
+    {
+        DepthAttachment color;
+        VkDescriptorSet set = VK_NULL_HANDLE;
+        VkFramebuffer framebuffer = VK_NULL_HANDLE;
+    };
+    std::array<TemporalTarget, 2> _taaHistory{};
+    VkRenderPass _taaPass = VK_NULL_HANDLE;
+    bool _taaValid = false, _motionDebug = false, _taaInitialized = false;
+    unsigned _taaIndex = 0, _taaFrame = 0;
+    std::array<float, 2> _taaJitter{};
+    std::array<float, 4> _taaProjection{};
     std::shared_ptr<TextureImage> _smaaArea, _smaaSearch;
     std::array<VkPipeline, 8> _worldShapePipelines{};
     std::array<VkPipeline, 16> _worldScreenPipelines{};

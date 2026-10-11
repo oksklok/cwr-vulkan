@@ -221,6 +221,7 @@ void Landscape::DrawMesh(Scene& scene, TLVertexTable& table, const Shape& vMesh,
     }
 
     // note: BeginMesh may change pos field (may be used for fog etc)
+    _engine->CaptureTemporalTerrain(table, isWater);
     _engine->BeginMesh(table, render::LegacySpec{});
     float z = scene.GetCamera()->Position().Distance(bCenter) - bRadius;
     float z2 = Square(floatMax(z, 0));
@@ -1338,7 +1339,9 @@ void Landscape::DrawGround(const LandBegEnd& bigRect, Scene& scene, const Ground
                             animLand.SetBrigth(layer.bright);
                         }
 #if 1
+                        GEngine->SetTemporalTerrain(true);
                         shape->Draw(anim, lights, ClipAll, 0, trans, iTrans);
+                        GEngine->SetTemporalTerrain(false);
 #endif
                         if (layer.isAlpha)
                         {

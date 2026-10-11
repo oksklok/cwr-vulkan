@@ -7,6 +7,7 @@
 #include <PoseidonVK/TextureVK.hpp>
 #include <PoseidonVK/ScreenGeometryVK.hpp>
 #include <Poseidon/Graphics/Core/ZBiasMath.hpp>
+#include <map>
 
 namespace Poseidon
 {
@@ -29,6 +30,12 @@ class EngineVK final : public Engine
     void FinishDraw() override;
     void BeginWorldEffects(bool enabled) override;
     void FinishWorldEffects() override;
+    void PushRenderInstance(uint64_t id) override { _renderPath.push_back(id); }
+    void PopRenderInstance() override { _renderPath.pop_back(); }
+    void CaptureTemporalMesh(const Shape&, TLVertexTable&, int) override;
+    void CaptureTemporalTerrain(TLVertexTable&, bool) override;
+    void SetTemporalTerrain(bool terrain) override { _temporalTerrain = terrain; }
+    void ResetTemporalHistory() override;
     RString SetAntiAliasing(RString mode) override { return _vk.SetAntiAliasing(static_cast<const char*>(mode)).c_str(); }
     bool SetWorldRenderScale(int percent) override { return _vk.SetRenderScale(percent); }
     bool SetSSAO(bool enabled, float strength, float radius, float bias, float fade) override;
@@ -142,6 +149,26 @@ class EngineVK final : public Engine
     bool _paused = false;
     bool _failed = false;
     bool _worldEffectsPending = false;
+    struct MotionHistory
+    {
+        std::array<float, 16> mvp{};
+        std::vector<std::array<float, 4>> clip;
+        bool ambiguous = false;
+    };
+    std::vector<uint64_t> _renderPath;
+    std::map<std::vector<uint64_t>, MotionHistory> _previousMotion, _currentMotion;
+    Matrix4 _previousWorldView{MIdentity}, _previousProjection{MIdentity};
+    Vector3 _previousCameraPosition{VZero}, _previousCameraDirection{VZero};
+    bool _temporalCameraValid = false;
+    bool _temporalWorldDrawn = false;
+    bool _previousNightVision = false;
+    bool _temporalTerrain = false;
+    Matrix4 _shapeModelWorld{MIdentity};
+    int _temporalCameraType = -1;
+    std::array<float, 2> _previousJitter{};
+    std::array<float, 16> _previousSoftwareProjection{};
+    void BeginTemporalWorld();
+    void CaptureTemporalNative(const Shape&);
     ShadowMapTuning _shadowTuning;
     float _shadowSunFactor = 0;
     bool _shadowWorld = false;

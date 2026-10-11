@@ -7,8 +7,55 @@
 #include <PoseidonVK/TextureInterpolationVK.hpp>
 #include <catch2/catch_approx.hpp>
 #include <limits>
+#include <Poseidon/Graphics/Core/TLVertex.hpp>
 
 using namespace Poseidon;
+
+TEST_CASE("Render identities survive neither copying nor address reuse", "[Graphics][vulkan-shape][temporal]")
+{
+    render::RenderIdentity original;
+    render::RenderIdentity copy(original);
+    REQUIRE(copy.Get() != original.Get());
+    const auto before = copy.Get();
+    copy = original;
+    REQUIRE(copy.Get() != original.Get());
+    REQUIRE(copy.Get() != before);
+    alignas(render::RenderIdentity) unsigned char storage[sizeof(render::RenderIdentity)];
+    auto* a = new(storage) render::RenderIdentity;
+    const auto id = a->Get();
+    a->~RenderIdentity();
+    auto* b = new(storage) render::RenderIdentity;
+    REQUIRE(b->Get() != id);
+    b->~RenderIdentity();
+}
+
+TEST_CASE("Temporal software projection agrees with pixel TL without applying FOV twice", "[Graphics][vulkan-shape][temporal]")
+{
+    Matrix4 p(MZero);
+    p(0,0)=800; p(1,1)=-450; p(0,2)=960; p(1,2)=540;
+    p(2,2)=1.001f; p.SetPosition(Vector3(0,0,-.1f));
+    const auto m=vk::SoftwareProjection(p,1920,1080);
+    Vector3 view(.8f,-.3f,4);
+    const float x=(m[0]*view.X()+m[8]*view.Z())/view.Z();
+    const float y=(m[5]*view.Y()+m[9]*view.Z())/view.Z();
+    REQUIRE(x == Catch::Approx(2*(800*.8f/4+960)/1920-1));
+    REQUIRE(y == Catch::Approx(2*(-450*-.3f/4+540)/1080-1));
+    REQUIRE(m[11] == 1);
+    REQUIRE(m[14] == Catch::Approx(-.1f));
+}
+
+TEST_CASE("CPU clipping interpolates previous homogeneous positions", "[Graphics][vulkan-shape][temporal]")
+{
+    TLVertexTable table;
+    table.AddPos(); table.AddPos(); table.AddPos();
+    table.previousClip = {{{2,4,6,2}},{{10,12,14,4}}};
+    table.InterpolatePrevious(2,0,1,.25f);
+    REQUIRE(table.previousClip[2] == std::array<float,4>{4,6,8,2.5f});
+    // Interpolate clip coordinates before division, not endpoint UV velocities.
+    REQUIRE(table.previousClip[2][0]/table.previousClip[2][3] == Catch::Approx(1.6f));
+    table.ReleaseTables();
+    REQUIRE(table.previousClip.empty());
+}
 
 TEST_CASE("Vulkan sky interpolation matches legacy packed RGB555 uploads", "[Graphics][vulkan-shape]")
 {
@@ -194,7 +241,9 @@ TEST_CASE("Vulkan native normals use inverse transpose and materials use the eng
     REQUIRE(lighting.emissive[0] == Catch::Approx(0.1f));
     REQUIRE(offsetof(vk::ShapeLighting, shadowReceiver) == 768);
     REQUIRE(offsetof(vk::ShapeLighting, shadow) == 784);
-    REQUIRE(sizeof(vk::ShapeLighting) == 1104);
+    REQUIRE(offsetof(vk::ShapeLighting, previousMVP) == 1104);
+    REQUIRE(offsetof(vk::ShapeLighting, temporal) == 1168);
+    REQUIRE(sizeof(vk::ShapeLighting) == 1200);
 }
 
 TEST_CASE("Vulkan software shadow receivers reconstruct the native camera-relative coordinates", "[Graphics][vulkan-shape]")

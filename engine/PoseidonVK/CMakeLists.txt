@@ -26,9 +26,13 @@ foreach(kind triangle shape screen shadow gamma ssao csm)
         list(APPEND VK_SHADER_HEADERS "${header}")
     endforeach()
 endforeach()
-foreach(kind fxaa smaa_edge smaa_weight smaa_blend aa_composite aa_composite_ms ssao_ms)
+foreach(kind fxaa smaa_edge smaa_weight smaa_blend aa_composite aa_composite_ms ssao_ms taa shape_temporal)
     set(source "${kind}")
     set(defines)
+    if(kind STREQUAL "shape_temporal")
+        set(source "shape")
+        set(defines -DTEMPORAL=1)
+    endif()
     if(kind MATCHES "_ms$")
         string(REGEX REPLACE "_ms$" "" source "${kind}")
         set(defines -DMULTISAMPLE_DEPTH=1)
@@ -39,6 +43,7 @@ foreach(kind fxaa smaa_edge smaa_weight smaa_blend aa_composite aa_composite_ms 
         COMMAND "${Vulkan_GLSLANG_VALIDATOR_EXECUTABLE}" -V --target-env vulkan1.0 ${defines}
             --vn "Cwr${kind}_frag" -o "${header}" "${CMAKE_CURRENT_SOURCE_DIR}/Shaders/${source}.frag"
         DEPENDS "Shaders/${source}.frag" Shaders/smaa_common.glsl
+            Shaders/shape_uniforms.glsl Shaders/shadow_sample.glsl
             ThirdParty/SMAA/SMAA.hlsl ThirdParty/FXAA/Fxaa3_11.h VERBATIM)
     list(APPEND VK_SHADER_HEADERS "${header}")
 endforeach()
@@ -47,7 +52,7 @@ add_custom_target(PoseidonVKShaders DEPENDS ${VK_SHADER_HEADERS})
 add_library(PoseidonVK STATIC VulkanContext.cpp VulkanContext_Gamma.cpp VulkanContext_SSAO.cpp VulkanContext_Triangle.cpp VulkanContext_Mesh.cpp VulkanContext_Texture.cpp TextureVK.cpp BufferVK.cpp VertexBufferVK.cpp
     EngineVK.cpp EngineVK_Shadow.cpp VulkanContext_Shadow.cpp EngineVK_Mesh.cpp EngineVK_2D.cpp EngineVK_Software.cpp EngineVK_Unsupported.cpp GraphicsBackendVK.cpp)
 add_dependencies(PoseidonVK PoseidonVKShaders)
-target_sources(PoseidonVK PRIVATE VulkanContext_AA.cpp)
+target_sources(PoseidonVK PRIVATE VulkanContext_AA.cpp EngineVK_Temporal.cpp)
 target_include_directories(PoseidonVK PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(PoseidonVK PUBLIC Poseidon Vulkan::Vulkan)
 if(WIN32)

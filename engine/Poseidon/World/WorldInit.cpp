@@ -1000,6 +1000,7 @@ const float PreferredGridSizeMP = 25;
 
 void World::CleanUpDeinit()
 {
+    if (GEngine) GEngine->ResetTemporalHistory();
     _timeToSkip = 0;
 
     _cameraEffect.Free();

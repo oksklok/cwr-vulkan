@@ -85,6 +85,7 @@ TLVertexTable::TLVertexTable(const IAnimator* anim, const Shape& src, const Matr
 
 void TLVertexTable::ReleaseTables()
 {
+    previousClip.clear();
     _clip.Clear();
     _posTrans.Clear();
     _vert.Clear();
@@ -120,6 +121,7 @@ int TLVertexTable::AddPos()
 
 void TLVertexTable::DoTransformPoints(const VertexTable& src, const Matrix4& posView, int beg, int end)
 {
+    previousClip.clear();
     // this is the most common case
     // simple mesh with no decal polygons
 
@@ -143,6 +145,7 @@ void TLVertexTable::DoTransformPoints(const VertexTable& src, const Matrix4& pos
 
 void TLVertexTable::DoTransformPoints(const IAnimator* anim, const Shape& src, const Matrix4& posView)
 {
+    previousClip.clear();
     int i;
     _orHints = src._orHints;
     _andHints = src._andHints;

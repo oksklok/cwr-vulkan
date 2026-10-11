@@ -1629,6 +1629,7 @@ GameValue ObjSetPosASL(const GameState* state, GameValuePar oper1, GameValuePar 
         return NOTHING;
     }
 
+    if (GEngine && GWorld->CameraOn() == obj) GEngine->ResetTemporalHistory();
     // let vehicle adjust position
 
     Matrix4 trans = obj->Transform();
@@ -1711,6 +1712,7 @@ GameValue ObjSetPos(const GameState* state, GameValuePar oper1, GameValuePar ope
         return NOTHING;
     }
 
+    if (GEngine && GWorld->CameraOn() == obj1) GEngine->ResetTemporalHistory();
     // let vehicle adjust position
 
     Matrix4 trans = obj1->Transform();
@@ -1855,6 +1857,7 @@ GameValue ObjSetDir(const GameState* state, GameValuePar oper1, GameValuePar ope
     }
 
     float azimut = oper2;
+    if (GEngine && GWorld->CameraOn() == obj1) GEngine->ResetTemporalHistory();
     Matrix3 rotY(MRotationY, -HDegree(azimut));
     obj1->SetOrient(rotY);
     return NOTHING;

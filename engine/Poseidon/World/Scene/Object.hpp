@@ -1,4 +1,5 @@
 #pragma once
+#include <Poseidon/Graphics/Core/RenderIdentity.hpp>
 
 #include <Poseidon/Graphics/Rendering/Shape/Shape.hpp>
 #include <Poseidon/Core/Visual.hpp>
@@ -233,6 +234,7 @@ class Object: public NetworkObject, public FrameBase, public IAnimator
 	protected:
 	Ref<LODShapeWithShadow> _shape; // object shape
 	int _id; // object id
+	Poseidon::render::RenderIdentity _renderIdentity;
 
 	mutable char _animatedCount; // check if Animate/Deanimate is paired
 
